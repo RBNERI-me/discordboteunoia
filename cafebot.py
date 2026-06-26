@@ -18,7 +18,6 @@ def home():
     return "Bot status: Operational & Online"
 
 def run_server():
-    # Render dynamically assigns a port via environment variables
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host='0.0.0.0', port=port)
 
@@ -30,13 +29,14 @@ def keep_alive():
 # --- CONFIGURATION ---
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-MOTION_POST_CHANNEL_ID = 1517108004166828153  # Channel where the initial "File a Motion" button embed lives
-JUDGE_REVIEW_CHANNEL_ID = 1519903351557587064   # Private channel where Judges review submitted motions
-JUDGE_ROLE_ID = 1517434703991410799        # Role ID allowed to accept/deny hearings
-HEARING_CATEGORY_ID = 1380491610428805170       # Category ID where approved case channels are built
+MOTION_POST_CHANNEL_ID = 1517108004166828153  
+JUDGE_REVIEW_CHANNEL_ID = 1519903351557587064   
+JUDGE_ROLE_ID = 1517434703991410799        
+HEARING_CATEGORY_ID = 1380491610428805170       
 
-# NEW ROLE CONFIGURATION
-CHIEF_MAGISTRATE_ROLE_ID = 1517434703991410799  # Replace with your actual Chief Magistrate Role ID if different
+# NEW ROLE & LOGGING CHANNELS
+CHIEF_MAGISTRATE_ROLE_ID = 1519858689941573794 
+COURT_LOGS_CHANNEL_ID = 1520002287299461140  # <-- Change this to your public or private Court Logs Archive Channel
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -44,21 +44,23 @@ intents.guilds = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- CONVERSATIONAL MEMORY STORAGE ---
 conversation_histories = {}
 MAX_MEMORY = 15 
-
-# --- CASE MANAGEMENT COUNTER ---
 case_counter = 1
 
+# Helper to look for user mentions or IDs and return them clean
+def extract_mentions(input_str):
+    matches = re.findall(r'<@!?(\d+)>|\b(\d{17,19})\b', input_str)
+    mentions = []
+    for match in matches:
+        m_id = match[0] if match[0] else match[1]
+        mentions.append(f"<@{m_id}>")
+    return " ".join(mentions) if mentions else input_str
 
 # =================================================================
-# PLACE UI COMPONENTS AT THE TOP SO THE BOT CAN SEE THEM IMMEDIATELY
+# UI COMPONENTS
 # =================================================================
 
-# -----------------------------------------------------------------
-# 1. THE MOTION SUBMISSION MODAL
-# -----------------------------------------------------------------
 class MotionApplicationModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="Legal Motion Filing Form")
@@ -116,7 +118,7 @@ class MotionApplicationModal(discord.ui.Modal):
 
         embed = discord.Embed(
             title=f"⚖️ New Legal Motion Filed | {docket_number}",
-            description=f"**Filer:** {interaction.user.mention}\n**Status:** Awaiting Judicial Assignment",
+            description=f"**Filer:** {interaction.user.mention}\n**Status:** 🟡 Awaiting Judicial Assignment",
             color=discord.Color.blue()
         )
         embed.add_field(name="👤 Plaintiff(s)", value=self.plaintiff.value, inline=False)
@@ -130,16 +132,16 @@ class MotionApplicationModal(discord.ui.Modal):
             filer_id=interaction.user.id, 
             docket=docket_number, 
             plaintiff=self.plaintiff.value, 
-            defendant=self.defendant.value
+            defendant=self.defendant.value,
+            issue=self.issue.value,
+            remedy=self.remedy.value,
+            lawyers=lawyer_value
         )
         
         await review_channel.send(embed=embed, view=view)
         await interaction.followup.send("✅ **Your motion has been successfully compiled and sent to the Judicial Review panel.**", ephemeral=True)
 
 
-# -----------------------------------------------------------------
-# 2. START FILING BUTTON VIEW
-# -----------------------------------------------------------------
 class StartMotionView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None) 
@@ -150,15 +152,72 @@ class StartMotionView(discord.ui.View):
 
 
 # -----------------------------------------------------------------
-# 3. JUDGES INTERACTIVE ACTION BUTTONS
+# COURTROOM CLOSE & ARCHIVE LOGGING LOGIC
+# -----------------------------------------------------------------
+class CourtroomLogView(discord.ui.View):
+    def __init__(self, docket: str, plaintiff: str, defendant: str, judge_id: int):
+        super().__init__(timeout=None)
+        self.docket = docket
+        self.plaintiff = plaintiff
+        self.defendant = defendant
+        self.judge_id = judge_id
+
+    @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log", emoji="📜")
+    async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
+        judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
+        if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        await interaction.followup.send("⏳ *Compiling transcript files and packaging legal archives...*")
+
+        log_channel = interaction.guild.get_channel(COURT_LOGS_CHANNEL_ID)
+        
+        # Compile messages up to 1000 items
+        transcript_text = f"=== COURTROOM TRANSCRIPT LOG FOR {self.docket} ===\n\n"
+        async for msg in interaction.channel.history(limit=1000, oldest_first=True):
+            time_stamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')
+            transcript_text += f"[{time_stamp}] {msg.author.name} ({msg.author.id}): {msg.clean_content}\n"
+            if msg.attachments:
+                for attachment in msg.attachments:
+                    transcript_text += f" -> [Attachment File]: {attachment.url}\n"
+        
+        # Save to temporary in-memory IO Stream
+        data_stream = io.BytesIO(transcript_text.encode('utf-8'))
+        log_file = discord.File(data_stream, filename=f"transcript-{self.docket.lower()}.txt")
+
+        if log_channel:
+            log_embed = discord.Embed(
+                title=f"📁 Case Closed & Archived | {self.docket}",
+                description=f"Court transcript processing complete. Vault file compiled by {interaction.user.mention}.",
+                color=discord.Color.dark_teal()
+            )
+            log_embed.add_field(name="🏛️ Court Trial Room", value=interaction.channel.name, inline=True)
+            log_embed.add_field(name="👤 Plaintiffs", value=self.plaintiff, inline=True)
+            log_embed.add_field(name="🛡️ Defendants", value=self.defendant, inline=True)
+            log_embed.set_footer(text=f"Presiding Closing Judge ID: {interaction.user.id}")
+            
+            await log_channel.send(embed=log_embed, file=log_file)
+
+        await interaction.followup.send("✅ Archive file delivered safely. This channel will now self-destruct in 10 seconds.")
+        await asyncio.sleep(10)
+        await interaction.channel.delete()
+
+
+# -----------------------------------------------------------------
+# JUDGE MAIN FILING ACTION CARD
 # -----------------------------------------------------------------
 class JudgeReviewView(discord.ui.View):
-    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str):
+    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str, issue: str, remedy: str, lawyers: str):
         super().__init__(timeout=None)
         self.filer_id = filer_id
         self.docket = docket
         self.plaintiff = plaintiff
         self.defendant = defendant
+        self.issue = issue
+        self.remedy = remedy
+        self.lawyers = lawyers
 
     @discord.ui.button(label="Accept Hearing", style=discord.ButtonStyle.success, emoji="✅")
     async def accept_hearing(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -198,10 +257,10 @@ class JudgeReviewView(discord.ui.View):
                 return member
             return None
 
-        p_member = await apply_user_overwrite(self.plaintiff)
-        d_member = await apply_user_overwrite(self.defendant)
+        await apply_user_overwrite(self.plaintiff)
+        await apply_user_overwrite(self.defendant)
+        await apply_user_overwrite(self.lawyers)
 
-        # Determine Courtroom Legal Status
         is_official = False
         if interaction.user.guild_permissions.administrator or (chief_magistrate_role and chief_magistrate_role in interaction.user.roles):
             is_official = True
@@ -216,18 +275,28 @@ class JudgeReviewView(discord.ui.View):
             topic=f"[{status_text}] Trial Room for Case Docket {self.docket}."
         )
 
+        # UPDATE INITIAL REVIEW EMBED LOG
         edited_embed = interaction.message.embeds[0]
+        edited_embed.title = f"⚖️ Legal Motion [ACCEPTED] | {self.docket}"
         edited_embed.color = discord.Color.green()
-        edited_embed.description = f"**Filer:** <@{self.filer_id}>\n**Status:** Approved & Assigned\n**Presiding Justice:** {interaction.user.mention}\n**Court Classification:** `{status_text}`\n**Trial Room:** {new_channel.mention}"
-        
+        edited_embed.description = f"**Filer:** <@{self.filer_id}>\n**Status:** ✅ Approved & Assigned\n**Presiding Justice:** {interaction.user.mention}\n**Court Classification:** `{status_text}`\n**Trial Room:** {new_channel.mention}"
         await interaction.message.edit(embed=edited_embed, view=None)
 
-        # Generate Intro Court Notice Banner
+        # MENTION PARTIES IN THE NEW COURTROOM
+        p_mentions = extract_mentions(self.plaintiff)
+        d_mentions = extract_mentions(self.defendant)
+        l_mentions = extract_mentions(self.lawyers)
+
+        mention_broadcast = f"🔔 **Case Notification Drop** | Plaintiff: {p_mentions} | Defendant: {d_mentions} | Legal Counsel: {l_mentions}"
+        await new_channel.send(content=mention_broadcast)
+
+        # COURTROOM COMPILATION SUMMARY CARD
         court_description = (
             f"This channel has been officially established for litigation proceedings.\n\n"
             f"**Presiding Judge:** {interaction.user.mention}\n"
-            f"**Plaintiff Parties:** {self.plaintiff}\n"
-            f"**Defense Parties:** {self.defendant}\n\n"
+            f"**Plaintiffs:** {self.plaintiff}\n"
+            f"**Defendants:** {self.defendant}\n"
+            f"**Legal Reps:** {self.lawyers}\n\n"
         )
 
         if is_official:
@@ -240,7 +309,17 @@ class JudgeReviewView(discord.ui.View):
             description=court_description,
             color=embed_color
         )
-        intro_msg = await new_channel.send(content=f"{interaction.user.mention} | Case Active Notification", embed=court_embed)
+        court_embed.add_field(name="📜 Claims & Legal Grievance", value=self.issue, inline=False)
+        court_embed.add_field(name="🏛️ Relief / Remedy Demanded", value=self.remedy, inline=False)
+        
+        log_button_view = CourtroomLogView(
+            docket=self.docket, 
+            plaintiff=self.plaintiff, 
+            defendant=self.defendant, 
+            judge_id=interaction.user.id
+        )
+        
+        intro_msg = await new_channel.send(embed=court_embed, view=log_button_view)
         await intro_msg.pin()
 
     @discord.ui.button(label="Deny & Dismiss", style=discord.ButtonStyle.danger, emoji="❌")
@@ -264,10 +343,11 @@ class JudgeReviewView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
+        # UPDATE INITIAL REVIEW EMBED LOG TO REJECTED
         edited_embed = interaction.message.embeds[0]
+        edited_embed.title = f"⚖️ Legal Motion [REJECTED] | {self.docket}"
         edited_embed.color = discord.Color.red()
-        edited_embed.description = f"**Filer:** <@{self.filer_id}>\n**Status:** Motion Dismissed / Rejected\n**Reviewed By:** {interaction.user.mention}"
-        
+        edited_embed.description = f"**Filer:** <@{self.filer_id}>\n**Status:** ❌ Motion Dismissed / Rejected\n**Reviewed By:** {interaction.user.mention}"
         await interaction.message.edit(embed=edited_embed, view=None)
 
 
@@ -325,7 +405,6 @@ def build_server_snapshot(guild: discord.Guild) -> list:
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setupcourt(ctx):
-    """Admin Setup Utility: Dispatches the legal portal dashboard card into the system channel."""
     target_channel = ctx.guild.get_channel(MOTION_POST_CHANNEL_ID)
     if not target_channel:
         await ctx.send("❌ Error: Invalid setup target channel path ID configured.")
@@ -344,7 +423,6 @@ async def setupcourt(ctx):
 
 @bot.command()
 async def askme(ctx, *, user_prompt: str = ""):
-    """Multi-Purpose AI Command: Modmail Ticket Router OR Absolute Server Overhaul Suite."""
     attachment_info = "None"
     uploaded_file = None
     if ctx.message.attachments:
@@ -551,15 +629,8 @@ async def askme(ctx, *, user_prompt: str = ""):
             await ctx.send("❌ *Hierarchy / Permission Blocked: Make sure my role is at the top of your list.*")
         except json.JSONDecodeError as json_err:
             await ctx.send("❌ *Data Engine Error: Failed to structure raw JSON configurations safely.*")
-            print(f"DEBUG - Raw invalid JSON returned was: {ai_response}")
         except Exception as e:
             await ctx.send(f"❌ Execution Core Exception: {e}")
 
-# ... [rest of your code above] ...
-
-        except Exception as e:
-            await ctx.send(f"❌ Execution Core Exception: {e}")
-
-# Start the web server right before launching the discord client loop
 keep_alive()
 bot.run(DISCORD_TOKEN)
