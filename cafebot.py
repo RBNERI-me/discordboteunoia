@@ -79,35 +79,29 @@ class MotionApplicationModal(discord.ui.Modal):
             placeholder="e.g. 151990335155758706", 
             required=True, max_length=100
         )
-        self.plaintiff_lawyers = discord.ui.TextInput(
-            label="Plaintiff Legal Representation User ID", 
+        # Combined due to Discord's strict 5-item maximum modal limit
+        self.legal_representatives = discord.ui.TextInput(
+            label="Legal Rep IDs (Plaintiff | Defendant)", 
             style=discord.TextStyle.short,
-            placeholder="e.g. 138049161042880517 (or leave blank if None)", 
-            required=False, max_length=100
-        )
-        self.defendant_lawyers = discord.ui.TextInput(
-            label="Defendant Legal Representation User ID", 
-            style=discord.TextStyle.short,
-            placeholder="e.g. 151743470399141079 (or leave blank if None)", 
-            required=False, max_length=100
+            placeholder="e.g. 138049161042880517 | 151743470399141079", 
+            required=False, max_length=200
         )
         self.issue = discord.ui.TextInput(
             label="State of Claim / Core Issues", 
             style=discord.TextStyle.long, 
             placeholder="Describe the rule breach, legal grievances, or incident timeline...", 
-            required=True, max_length=600
+            required=True, max_length=800
         )
         self.remedy = discord.ui.TextInput(
-            label="Relief / Remedy Demanded",
-            style=discord.TextStyle.long,
-            placeholder="What outcome, fine, or settlement terms are you requesting from the court?",
+            label="Relief / Remedy Demanded", 
+            style=discord.TextStyle.long, 
+            placeholder="Specify legal remedies, structural retributions, or payout settlements...", 
             required=True, max_length=400
         )
 
         self.add_item(self.plaintiff)
         self.add_item(self.defendant)
-        self.add_item(self.plaintiff_lawyers)
-        self.add_item(self.defendant_lawyers)
+        self.add_item(self.legal_representatives)
         self.add_item(self.issue)
         self.add_item(self.remedy)
 
@@ -123,8 +117,13 @@ class MotionApplicationModal(discord.ui.Modal):
         docket_number = f"CASE-2026-{case_counter:03d}"
         case_counter += 1
 
-        p_lawyers = self.plaintiff_lawyers.value if self.plaintiff_lawyers.value.strip() else "None"
-        d_lawyers = self.defendant_lawyers.value if self.defendant_lawyers.value.strip() else "None"
+        # Parse out split legal reps from single input safely
+        raw_reps = self.legal_representatives.value if self.legal_representatives.value.strip() else "None | None"
+        if "|" in raw_reps:
+            p_lawyers, d_lawyers = [part.strip() for part in raw_reps.split("|", 1)]
+        else:
+            p_lawyers = raw_reps
+            d_lawyers = "None"
 
         embed = discord.Embed(
             title=f"⚖️ New Legal Motion Filed | {docket_number}",
@@ -178,8 +177,10 @@ class CourtroomLogView(discord.ui.View):
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         
-        # Strictly ensures only users with the Judge Role or Server Administrators can trigger this action
-        if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+        # Ensures any user with the Judge Role or Server Administrators can trigger this action perfectly
+        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
+            pass
+        else:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
             return
 
@@ -206,8 +207,8 @@ class CourtroomLogView(discord.ui.View):
                 color=discord.Color.dark_teal()
             )
             log_embed.add_field(name="🏛️ Court Trial Room", value=interaction.channel.name, inline=True)
-            log_embed.add_field(name="👤 Plaintiff", value=self.plaintiff, inline=True)
-            log_embed.add_field(name="🛡️ Defendant", value=self.defendant, inline=True)
+            log_embed.add_field(name="👤 Plaintiff", value=extract_mentions(self.plaintiff), inline=True)
+            log_embed.add_field(name="🛡️ Defendant", value=extract_mentions(self.defendant), inline=True)
             log_embed.set_footer(text=f"Presiding Closing Judge ID: {interaction.user.id}")
             
             await log_channel.send(embed=log_embed, file=log_file)
@@ -237,7 +238,9 @@ class JudgeReviewView(discord.ui.View):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         chief_magistrate_role = interaction.guild.get_role(CHIEF_MAGISTRATE_ROLE_ID)
         
-        if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
+            pass
+        else:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can accept this request.", ephemeral=True)
             return
 
@@ -311,10 +314,10 @@ class JudgeReviewView(discord.ui.View):
         court_description = (
             f"This channel has been officially established for litigation proceedings.\n\n"
             f"⚖️ **Presiding Judge:** {interaction.user.mention}\n"
-            f"👤 **Plaintiff:** {extract_mentions(self.plaintiff)}\n"
-            f"🛡️ **Defendant:** {extract_mentions(self.defendant)}\n"
-            f"👔 **Plaintiff Legal Reps:** {extract_mentions(self.plaintiff_lawyers)}\n"
-            f"💼 **Defendant Legal Reps:** {extract_mentions(self.defendant_lawyers)}\n\n"
+            f"👤 **Plaintiff:** {p_mentions}\n"
+            f"🛡️ **Defendant:** {d_mentions}\n"
+            f"👔 **Plaintiff Legal Reps:** {pl_mentions}\n"
+            f"💼 **Defendant Legal Reps:** {dl_mentions}\n\n"
         )
 
         if is_official:
@@ -327,8 +330,8 @@ class JudgeReviewView(discord.ui.View):
             description=court_description,
             color=embed_color
         )
-        court_embed.add_field(name="📜 Claims & Legal Grievance", value=self.issue, inline=False)
-        court_embed.add_field(name="🏛️ Relief / Remedy Demanded", value=self.remedy, inline=False)
+        court_embed.add_field(name="📜 State of Claim / Core Issues", value=self.issue, inline=False)
+        court_embed.add_field(name="⚖️ Relief / Remedy Demanded", value=self.remedy, inline=False)
         
         log_button_view = CourtroomLogView(
             docket=self.docket, 
@@ -343,7 +346,9 @@ class JudgeReviewView(discord.ui.View):
     @discord.ui.button(label="Deny & Dismiss", style=discord.ButtonStyle.danger, emoji="❌")
     async def deny_hearing(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
-        if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
+            pass
+        else:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can reject this request.", ephemeral=True)
             return
 
