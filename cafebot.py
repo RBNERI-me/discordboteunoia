@@ -68,41 +68,54 @@ class MotionApplicationModal(discord.ui.Modal):
         super().__init__(title="Legal Motion Filing Form")
 
         self.plaintiff = discord.ui.TextInput(
-            label="Plaintiff Username / ID", 
+            label="Plaintiff User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., @JohnDoe or 123456789012345678", 
+            placeholder="e.g., 123456789012345678", 
             required=True, max_length=100
         )
         self.defendant = discord.ui.TextInput(
-            label="Defendant Username / ID", 
+            label="Defendant User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., @JaneSmith or 876543210987654321", 
+            placeholder="e.g., 876543210987654321", 
             required=True, max_length=100
         )
         self.plaintiff_lawyers = discord.ui.TextInput(
-            label="Plaintiff Lawyers / Legal Representatives", 
-            style=discord.TextStyle.long,
-            placeholder="e.g., @LawyerA (or leave blank if None)", 
-            required=False, max_length=200
+            label="Plaintiff Legal Representation User ID", 
+            style=discord.TextStyle.short,
+            placeholder="e.g., 112233445566778899 (or leave blank if None)", 
+            required=False, max_length=100
         )
         self.defendant_lawyers = discord.ui.TextInput(
-            label="Defendant Lawyers / Legal Representatives", 
-            style=discord.TextStyle.long,
-            placeholder="e.g., @LawyerB (or leave blank if None)", 
-            required=False, max_length=200
+            label="Defendant Legal Representation User ID", 
+            style=discord.TextStyle.short,
+            placeholder="e.g., 998877665544332211 (or leave blank if None)", 
+            required=False, max_length=100
         )
         self.issue = discord.ui.TextInput(
-            label="Statement of Claim / Core Issue", 
+            label="State of Claim / Core Issues", 
             style=discord.TextStyle.long, 
             placeholder="Describe the rule breach, legal grievances, or incident timeline...", 
             required=True, max_length=1000
         )
+        self.remedy = discord.ui.TextInput(
+            label="Relief / Remedy Demanded",
+            style=discord.TextStyle.long,
+            placeholder="What outcome, fine, or settlement terms are you requesting from the court?",
+            required=True, max_length=400
+        )
 
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        pass
+
+    # Dynamic init chain execution handling item attachments cleanly
+    def init_items(self):
         self.add_item(self.plaintiff)
         self.add_item(self.defendant)
         self.add_item(self.plaintiff_lawyers)
         self.add_item(self.defendant_lawyers)
         self.add_item(self.issue)
+        self.add_item(self.remedy)
+        return self
 
     async def on_submit(self, interaction: discord.Interaction):
         global case_counter
@@ -129,6 +142,7 @@ class MotionApplicationModal(discord.ui.Modal):
         embed.add_field(name="👔 Plaintiff Legal Reps", value=p_lawyers, inline=False)
         embed.add_field(name="💼 Defendant Legal Reps", value=d_lawyers, inline=False)
         embed.add_field(name="📜 Claims & Core Legal Grievance", value=self.issue.value, inline=False)
+        embed.add_field(name="🏛️ Remedy/Damages Demanded", value=self.remedy.value, inline=False)
         embed.set_footer(text=f"Filer ID: {interaction.user.id} | Judicial System Desk")
 
         view = JudgeReviewView(
@@ -137,6 +151,7 @@ class MotionApplicationModal(discord.ui.Modal):
             plaintiff=self.plaintiff.value, 
             defendant=self.defendant.value,
             issue=self.issue.value,
+            remedy=self.remedy.value,
             plaintiff_lawyers=p_lawyers,
             defendant_lawyers=d_lawyers
         )
@@ -151,7 +166,8 @@ class StartMotionView(discord.ui.View):
 
     @discord.ui.button(label="File a Motion", style=discord.ButtonStyle.danger, custom_id="persistent:start_motion", emoji="⚖️")
     async def start_motion_click(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(MotionApplicationModal())
+        modal = MotionApplicationModal().init_items()
+        await interaction.response.send_modal(modal)
 
 
 # -----------------------------------------------------------------
@@ -165,7 +181,7 @@ class CourtroomLogView(discord.ui.View):
         self.defendant = defendant
         self.judge_id = judge_id
 
-    @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log", emoji="📜")
+    @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log_v2", emoji="📜")
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         
@@ -212,13 +228,14 @@ class CourtroomLogView(discord.ui.View):
 # JUDGE MAIN FILING ACTION CARD
 # -----------------------------------------------------------------
 class JudgeReviewView(discord.ui.View):
-    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str, issue: str, plaintiff_lawyers: str, defendant_lawyers: str):
+    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str, issue: str, remedy: str, plaintiff_lawyers: str, defendant_lawyers: str):
         super().__init__(timeout=None)
         self.filer_id = filer_id
         self.docket = docket
         self.plaintiff = plaintiff
         self.defendant = defendant
         self.issue = issue
+        self.remedy = remedy
         self.plaintiff_lawyers = plaintiff_lawyers
         self.defendant_lawyers = defendant_lawyers
 
@@ -301,10 +318,10 @@ class JudgeReviewView(discord.ui.View):
         court_description = (
             f"This channel has been officially established for litigation proceedings.\n\n"
             f"⚖️ **Presiding Judge:** {interaction.user.mention}\n"
-            f"👤 **Plaintiff:** {self.plaintiff}\n"
-            f"🛡️ **Defendant:** {self.defendant}\n"
-            f"👔 **Plaintiff Legal Reps:** {self.plaintiff_lawyers}\n"
-            f"💼 **Defendant Legal Reps:** {self.defendant_lawyers}\n\n"
+            f"👤 **Plaintiff:** {extract_mentions(self.plaintiff)}\n"
+            f"🛡️ **Defendant:** {extract_mentions(self.defendant)}\n"
+            f"👔 **Plaintiff Legal Reps:** {extract_mentions(self.plaintiff_lawyers)}\n"
+            f"💼 **Defendant Legal Reps:** {extract_mentions(self.defendant_lawyers)}\n\n"
         )
 
         if is_official:
@@ -318,6 +335,7 @@ class JudgeReviewView(discord.ui.View):
             color=embed_color
         )
         court_embed.add_field(name="📜 Claims & Legal Grievance", value=self.issue, inline=False)
+        court_embed.add_field(name="🏛️ Relief / Remedy Demanded", value=self.remedy, inline=False)
         
         log_button_view = CourtroomLogView(
             docket=self.docket, 
