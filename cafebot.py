@@ -70,37 +70,37 @@ class MotionApplicationModal(discord.ui.Modal):
         self.plaintiff = discord.ui.TextInput(
             label="Plaintiff User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 151710800416682815", 
+            placeholder="e.g. 151710800416682815", 
             required=True, max_length=100
         )
         self.defendant = discord.ui.TextInput(
             label="Defendant User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 876543210987654321", 
+            placeholder="e.g. 151990335155758706", 
             required=True, max_length=100
         )
         self.plaintiff_lawyers = discord.ui.TextInput(
             label="Plaintiff Legal Representation User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 112233445566778899", 
+            placeholder="e.g. 138049161042880517 (or leave blank if None)", 
             required=False, max_length=100
         )
         self.defendant_lawyers = discord.ui.TextInput(
             label="Defendant Legal Representation User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 998877665544332211", 
+            placeholder="e.g. 151743470399141079 (or leave blank if None)", 
             required=False, max_length=100
         )
         self.issue = discord.ui.TextInput(
             label="State of Claim / Core Issues", 
             style=discord.TextStyle.long, 
             placeholder="Describe the rule breach, legal grievances, or incident timeline...", 
-            required=True, max_length=1000
+            required=True, max_length=600
         )
         self.remedy = discord.ui.TextInput(
-            label="Relief / Remedy Demanded", 
-            style=discord.TextStyle.long, 
-            placeholder="What outcome, fine, or settlement terms are you requesting from the court?", 
+            label="Relief / Remedy Demanded",
+            style=discord.TextStyle.long,
+            placeholder="What outcome, fine, or settlement terms are you requesting from the court?",
             required=True, max_length=400
         )
 
@@ -131,12 +131,12 @@ class MotionApplicationModal(discord.ui.Modal):
             description=f"**Filer:** {interaction.user.mention}\n**Status:** 🟡 Awaiting Judicial Assignment",
             color=discord.Color.blue()
         )
-        embed.add_field(name="👤 Plaintiff", value=self.plaintiff.value, inline=True)
-        embed.add_field(name="🛡️ Defendant", value=self.defendant.value, inline=True)
-        embed.add_field(name="👔 Plaintiff Legal Reps", value=p_lawyers, inline=False)
-        embed.add_field(name="💼 Defendant Legal Reps", value=d_lawyers, inline=False)
+        embed.add_field(name="👤 Plaintiff ID", value=self.plaintiff.value, inline=True)
+        embed.add_field(name="🛡️ Defendant ID", value=self.defendant.value, inline=True)
+        embed.add_field(name="👔 Plaintiff Legal Rep ID", value=p_lawyers, inline=False)
+        embed.add_field(name="💼 Defendant Legal Rep ID", value=d_lawyers, inline=False)
         embed.add_field(name="📜 Claims & Core Legal Grievance", value=self.issue.value, inline=False)
-        embed.add_field(name="🏛️ Remedy/Damages Demanded", value=self.remedy.value, inline=False)
+        embed.add_field(name="🏛️ Relief / Remedy Demanded", value=self.remedy.value, inline=False)
         embed.set_footer(text=f"Filer ID: {interaction.user.id} | Judicial System Desk")
 
         view = JudgeReviewView(
@@ -178,6 +178,7 @@ class CourtroomLogView(discord.ui.View):
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         
+        # Strictly ensures only users with the Judge Role or Server Administrators can trigger this action
         if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
             return
