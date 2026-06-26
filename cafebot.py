@@ -70,7 +70,7 @@ class MotionApplicationModal(discord.ui.Modal):
         self.plaintiff = discord.ui.TextInput(
             label="Plaintiff User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 123456789012345678", 
+            placeholder="e.g., 151710800416682815", 
             required=True, max_length=100
         )
         self.defendant = discord.ui.TextInput(
@@ -82,13 +82,13 @@ class MotionApplicationModal(discord.ui.Modal):
         self.plaintiff_lawyers = discord.ui.TextInput(
             label="Plaintiff Legal Representation User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 112233445566778899 (or leave blank if None)", 
+            placeholder="e.g., 112233445566778899", 
             required=False, max_length=100
         )
         self.defendant_lawyers = discord.ui.TextInput(
             label="Defendant Legal Representation User ID", 
             style=discord.TextStyle.short,
-            placeholder="e.g., 998877665544332211 (or leave blank if None)", 
+            placeholder="e.g., 998877665544332211", 
             required=False, max_length=100
         )
         self.issue = discord.ui.TextInput(
@@ -98,24 +98,18 @@ class MotionApplicationModal(discord.ui.Modal):
             required=True, max_length=1000
         )
         self.remedy = discord.ui.TextInput(
-            label="Relief / Remedy Demanded",
-            style=discord.TextStyle.long,
-            placeholder="What outcome, fine, or settlement terms are you requesting from the court?",
+            label="Relief / Remedy Demanded", 
+            style=discord.TextStyle.long, 
+            placeholder="What outcome, fine, or settlement terms are you requesting from the court?", 
             required=True, max_length=400
         )
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
-        pass
-
-    # Dynamic init chain execution handling item attachments cleanly
-    def init_items(self):
         self.add_item(self.plaintiff)
         self.add_item(self.defendant)
         self.add_item(self.plaintiff_lawyers)
         self.add_item(self.defendant_lawyers)
         self.add_item(self.issue)
         self.add_item(self.remedy)
-        return self
 
     async def on_submit(self, interaction: discord.Interaction):
         global case_counter
@@ -166,8 +160,7 @@ class StartMotionView(discord.ui.View):
 
     @discord.ui.button(label="File a Motion", style=discord.ButtonStyle.danger, custom_id="persistent:start_motion", emoji="⚖️")
     async def start_motion_click(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = MotionApplicationModal().init_items()
-        await interaction.response.send_modal(modal)
+        await interaction.response.send_modal(MotionApplicationModal())
 
 
 # -----------------------------------------------------------------
@@ -181,11 +174,10 @@ class CourtroomLogView(discord.ui.View):
         self.defendant = defendant
         self.judge_id = judge_id
 
-    @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log_v2", emoji="📜")
+    @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log", emoji="📜")
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         
-        # Strictly ensures only users with the Judge Role or Server Administrators can trigger this action
         if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
             return
