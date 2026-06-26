@@ -35,8 +35,8 @@ JUDGE_ROLE_ID = 1517434703991410799
 HEARING_CATEGORY_ID = 1380491610428805170       
 
 # NEW ROLE & LOGGING CHANNELS
-CHIEF_MAGISTRATE_ROLE_ID = 1519858689941573794 
-COURT_LOGS_CHANNEL_ID = 1520002287299461140  # <-- Change this to your public or private Court Logs Archive Channel
+CHIEF_MAGISTRATE_ROLE_ID = 1517434703991410799  
+COURT_LOGS_CHANNEL_ID = 1519903351557587064  
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -50,6 +50,8 @@ case_counter = 1
 
 # Helper to look for user mentions or IDs and return them clean
 def extract_mentions(input_str):
+    if not input_str or input_str.strip().lower() == "none":
+        return "None"
     matches = re.findall(r'<@!?(\d+)>|\b(\d{17,19})\b', input_str)
     mentions = []
     for match in matches:
@@ -66,21 +68,27 @@ class MotionApplicationModal(discord.ui.Modal):
         super().__init__(title="Legal Motion Filing Form")
 
         self.plaintiff = discord.ui.TextInput(
-            label="Plaintiff Username(s) / ID(s)", 
-            style=discord.TextStyle.long,
-            placeholder="e.g., @JohnDoe. Enter the party initiating the lawsuit.", 
-            required=True, max_length=150
+            label="Plaintiff Username / ID", 
+            style=discord.TextStyle.short,
+            placeholder="e.g., @JohnDoe or 123456789012345678", 
+            required=True, max_length=100
         )
         self.defendant = discord.ui.TextInput(
-            label="Defendant Username(s) / ID(s)", 
-            style=discord.TextStyle.long,
-            placeholder="e.g., @JaneSmith. Enter the party being accused.", 
-            required=True, max_length=150
+            label="Defendant Username / ID", 
+            style=discord.TextStyle.short,
+            placeholder="e.g., @JaneSmith or 876543210987654321", 
+            required=True, max_length=100
         )
-        self.lawyers = discord.ui.TextInput(
-            label="Assigned Counsel / Legal Representatives", 
+        self.plaintiff_lawyers = discord.ui.TextInput(
+            label="Plaintiff Lawyers / Legal Representatives", 
             style=discord.TextStyle.long,
-            placeholder="e.g., Plaintiff: @LawyerA | Defendant: @LawyerB (or leave blank)", 
+            placeholder="e.g., @LawyerA (or leave blank if None)", 
+            required=False, max_length=200
+        )
+        self.defendant_lawyers = discord.ui.TextInput(
+            label="Defendant Lawyers / Legal Representatives", 
+            style=discord.TextStyle.long,
+            placeholder="e.g., @LawyerB (or leave blank if None)", 
             required=False, max_length=200
         )
         self.issue = discord.ui.TextInput(
@@ -89,18 +97,12 @@ class MotionApplicationModal(discord.ui.Modal):
             placeholder="Describe the rule breach, legal grievances, or incident timeline...", 
             required=True, max_length=1000
         )
-        self.remedy = discord.ui.TextInput(
-            label="Relief / Remedy Demanded", 
-            style=discord.TextStyle.long, 
-            placeholder="What outcome, fine, or settlement terms are you requesting from the court?", 
-            required=True, max_length=400
-        )
 
         self.add_item(self.plaintiff)
         self.add_item(self.defendant)
-        self.add_item(self.lawyers)
+        self.add_item(self.plaintiff_lawyers)
+        self.add_item(self.defendant_lawyers)
         self.add_item(self.issue)
-        self.add_item(self.remedy)
 
     async def on_submit(self, interaction: discord.Interaction):
         global case_counter
@@ -114,18 +116,19 @@ class MotionApplicationModal(discord.ui.Modal):
         docket_number = f"CASE-2026-{case_counter:03d}"
         case_counter += 1
 
-        lawyer_value = self.lawyers.value if self.lawyers.value.strip() else "None Specified"
+        p_lawyers = self.plaintiff_lawyers.value if self.plaintiff_lawyers.value.strip() else "None"
+        d_lawyers = self.defendant_lawyers.value if self.defendant_lawyers.value.strip() else "None"
 
         embed = discord.Embed(
             title=f"⚖️ New Legal Motion Filed | {docket_number}",
             description=f"**Filer:** {interaction.user.mention}\n**Status:** 🟡 Awaiting Judicial Assignment",
             color=discord.Color.blue()
         )
-        embed.add_field(name="👤 Plaintiff(s)", value=self.plaintiff.value, inline=False)
-        embed.add_field(name="🛡️ Defendant(s)", value=self.defendant.value, inline=False)
-        embed.add_field(name="👔 Legal Representation", value=lawyer_value, inline=False)
+        embed.add_field(name="👤 Plaintiff", value=self.plaintiff.value, inline=True)
+        embed.add_field(name="🛡️ Defendant", value=self.defendant.value, inline=True)
+        embed.add_field(name="👔 Plaintiff Legal Reps", value=p_lawyers, inline=False)
+        embed.add_field(name="💼 Defendant Legal Reps", value=d_lawyers, inline=False)
         embed.add_field(name="📜 Claims & Core Legal Grievance", value=self.issue.value, inline=False)
-        embed.add_field(name="🏛️ Remedy/Damages Demanded", value=self.remedy.value, inline=False)
         embed.set_footer(text=f"Filer ID: {interaction.user.id} | Judicial System Desk")
 
         view = JudgeReviewView(
@@ -134,8 +137,8 @@ class MotionApplicationModal(discord.ui.Modal):
             plaintiff=self.plaintiff.value, 
             defendant=self.defendant.value,
             issue=self.issue.value,
-            remedy=self.remedy.value,
-            lawyers=lawyer_value
+            plaintiff_lawyers=p_lawyers,
+            defendant_lawyers=d_lawyers
         )
         
         await review_channel.send(embed=embed, view=view)
@@ -165,6 +168,8 @@ class CourtroomLogView(discord.ui.View):
     @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log", emoji="📜")
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
+        
+        # Strictly ensures only users with the Judge Role or Server Administrators can trigger this action
         if judge_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
             return
@@ -174,7 +179,6 @@ class CourtroomLogView(discord.ui.View):
 
         log_channel = interaction.guild.get_channel(COURT_LOGS_CHANNEL_ID)
         
-        # Compile messages up to 1000 items
         transcript_text = f"=== COURTROOM TRANSCRIPT LOG FOR {self.docket} ===\n\n"
         async for msg in interaction.channel.history(limit=1000, oldest_first=True):
             time_stamp = msg.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -183,7 +187,6 @@ class CourtroomLogView(discord.ui.View):
                 for attachment in msg.attachments:
                     transcript_text += f" -> [Attachment File]: {attachment.url}\n"
         
-        # Save to temporary in-memory IO Stream
         data_stream = io.BytesIO(transcript_text.encode('utf-8'))
         log_file = discord.File(data_stream, filename=f"transcript-{self.docket.lower()}.txt")
 
@@ -194,8 +197,8 @@ class CourtroomLogView(discord.ui.View):
                 color=discord.Color.dark_teal()
             )
             log_embed.add_field(name="🏛️ Court Trial Room", value=interaction.channel.name, inline=True)
-            log_embed.add_field(name="👤 Plaintiffs", value=self.plaintiff, inline=True)
-            log_embed.add_field(name="🛡️ Defendants", value=self.defendant, inline=True)
+            log_embed.add_field(name="👤 Plaintiff", value=self.plaintiff, inline=True)
+            log_embed.add_field(name="🛡️ Defendant", value=self.defendant, inline=True)
             log_embed.set_footer(text=f"Presiding Closing Judge ID: {interaction.user.id}")
             
             await log_channel.send(embed=log_embed, file=log_file)
@@ -209,15 +212,15 @@ class CourtroomLogView(discord.ui.View):
 # JUDGE MAIN FILING ACTION CARD
 # -----------------------------------------------------------------
 class JudgeReviewView(discord.ui.View):
-    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str, issue: str, remedy: str, lawyers: str):
+    def __init__(self, filer_id: int, docket: str, plaintiff: str, defendant: str, issue: str, plaintiff_lawyers: str, defendant_lawyers: str):
         super().__init__(timeout=None)
         self.filer_id = filer_id
         self.docket = docket
         self.plaintiff = plaintiff
         self.defendant = defendant
         self.issue = issue
-        self.remedy = remedy
-        self.lawyers = lawyers
+        self.plaintiff_lawyers = plaintiff_lawyers
+        self.defendant_lawyers = defendant_lawyers
 
     @discord.ui.button(label="Accept Hearing", style=discord.ButtonStyle.success, emoji="✅")
     async def accept_hearing(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -241,6 +244,8 @@ class JudgeReviewView(discord.ui.View):
         }
 
         async def apply_user_overwrite(username_str):
+            if not username_str or username_str.strip().lower() == "none":
+                return None
             clean_name = username_str.replace("@", "").replace("<", "").replace(">", "").replace("!", "").strip().split()[0]
             if clean_name.isdigit():
                 try:
@@ -259,7 +264,8 @@ class JudgeReviewView(discord.ui.View):
 
         await apply_user_overwrite(self.plaintiff)
         await apply_user_overwrite(self.defendant)
-        await apply_user_overwrite(self.lawyers)
+        await apply_user_overwrite(self.plaintiff_lawyers)
+        await apply_user_overwrite(self.defendant_lawyers)
 
         is_official = False
         if interaction.user.guild_permissions.administrator or (chief_magistrate_role and chief_magistrate_role in interaction.user.roles):
@@ -285,18 +291,20 @@ class JudgeReviewView(discord.ui.View):
         # MENTION PARTIES IN THE NEW COURTROOM
         p_mentions = extract_mentions(self.plaintiff)
         d_mentions = extract_mentions(self.defendant)
-        l_mentions = extract_mentions(self.lawyers)
+        pl_mentions = extract_mentions(self.plaintiff_lawyers)
+        dl_mentions = extract_mentions(self.defendant_lawyers)
 
-        mention_broadcast = f"🔔 **Case Notification Drop** | Plaintiff: {p_mentions} | Defendant: {d_mentions} | Legal Counsel: {l_mentions}"
+        mention_broadcast = f"🔔 **Case Notification Drop** | Plaintiff: {p_mentions} | Defendant: {d_mentions} | Plaintiff Legal Counsel: {pl_mentions} | Defendant Legal Counsel: {dl_mentions}"
         await new_channel.send(content=mention_broadcast)
 
-        # COURTROOM COMPILATION SUMMARY CARD
+        # COURTROOM COMPILATION SUMMARY CARD WITH PRESIDING JUDGE MENTION
         court_description = (
             f"This channel has been officially established for litigation proceedings.\n\n"
-            f"**Presiding Judge:** {interaction.user.mention}\n"
-            f"**Plaintiffs:** {self.plaintiff}\n"
-            f"**Defendants:** {self.defendant}\n"
-            f"**Legal Reps:** {self.lawyers}\n\n"
+            f"⚖️ **Presiding Judge:** {interaction.user.mention}\n"
+            f"👤 **Plaintiff:** {self.plaintiff}\n"
+            f"🛡️ **Defendant:** {self.defendant}\n"
+            f"👔 **Plaintiff Legal Reps:** {self.plaintiff_lawyers}\n"
+            f"💼 **Defendant Legal Reps:** {self.defendant_lawyers}\n\n"
         )
 
         if is_official:
@@ -310,7 +318,6 @@ class JudgeReviewView(discord.ui.View):
             color=embed_color
         )
         court_embed.add_field(name="📜 Claims & Legal Grievance", value=self.issue, inline=False)
-        court_embed.add_field(name="🏛️ Relief / Remedy Demanded", value=self.remedy, inline=False)
         
         log_button_view = CourtroomLogView(
             docket=self.docket, 
@@ -343,7 +350,6 @@ class JudgeReviewView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-        # UPDATE INITIAL REVIEW EMBED LOG TO REJECTED
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = f"⚖️ Legal Motion [REJECTED] | {self.docket}"
         edited_embed.color = discord.Color.red()
