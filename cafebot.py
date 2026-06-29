@@ -14,13 +14,29 @@ from court_testing import (
 # Setup basic logging to monitor startup and tracking registrations
 logging.basicConfig(level=logging.INFO)
 
+# --- CONFIGURATION & OWNER ACCESS ---
+OWNER_USER_ID = 964858925565595678  # Your specific Discord User ID
+
 # --- BOT INITIALIZATION ---
-# Define the prefix and enable all required gateway intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# =================================================================
+# CUSTOM GLOBAL OWNER CHECK
+# =================================================================
+@bot.check
+async def check_owner_privileges(ctx):
+    """
+    Global check that automatically grants execution clearance to the owner 
+    bypassing standard role/permission requirements, while allowing normal rules 
+    for other users.
+    """
+    if ctx.author.id == OWNER_USER_ID:
+        return True
+    return True  # Let standard command checks handle other members
 
 # =================================================================
 # PERSISTENT VIEW REGISTRATION HOOK
@@ -37,7 +53,6 @@ async def setup_hook():
     bot.add_view(ApplicationEntryBoardView())
     
     # 2. Register Review Pipeline UI (with dynamic structural fallbacks)
-    # Passed mock IDs (0) to initialize layout structure definitions for the listeners
     bot.add_view(ApplicationReviewView(applicant_id=0, path_type="advocacy"))
     bot.add_view(ApplicationReviewView(applicant_id=0, path_type="judicial"))
     
@@ -63,7 +78,6 @@ async def on_ready():
     print("Status Tracking Setup: Online and ready.")
     print("--------------------------------------------------")
     
-    # Optional: Set a custom status presence for your courtroom operations
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching, 
@@ -73,7 +87,7 @@ async def on_ready():
 
 # --- START RUNTIME PIPELINE ---
 if __name__ == "__main__":
-    # Replace 'YOUR_BOT_TOKEN_HERE' with your secure Discord Developer Portal application token
+    # Replace with your secure Discord Developer Portal application token
     BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
