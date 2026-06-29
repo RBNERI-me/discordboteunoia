@@ -132,7 +132,6 @@ class SectionThreeModal(discord.ui.Modal):
         all_qa = self.section1_ans + self.section2_ans + [(self.questions[i], self.fields[i].value) for i in range(4)]
         final_payload["q_and_a"] = all_qa
 
-        # TYPO FIXED HERE
         chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
         log_channel = interaction.guild.get_channel(chan_id)
         
@@ -180,8 +179,8 @@ class SectionTwoModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         sec2_answers = [(self.sec2_qs[i], self.fields[i].value) for i in range(3)]
-        s3_modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
-        await interaction.response.send_modal(s3_modal)
+        s2_modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
+        await interaction.response.send_modal(s2_modal)
 
 
 class SectionOneModal(discord.ui.Modal):
@@ -211,7 +210,7 @@ class SectionOneModal(discord.ui.Modal):
 
 class ApplicationEntryBoardView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) # Keeps this tracking indefinitely on startup
 
     @discord.ui.select(
         custom_id="clerk:path_selection",
@@ -259,7 +258,8 @@ class ApplicationReviewView(discord.ui.View):
             return True
         return False
 
-    @discord.ui.button(label="Accept Application", style=discord.ButtonStyle.success, emoji="✅")
+    # ADDED: Explicit custom_ids for reliable inline callback recognition
+    @discord.ui.button(label="Accept Application", style=discord.ButtonStyle.success, custom_id="clerk_review:accept", emoji="✅")
     async def accept_app(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.check_hierarchy_clearance(interaction.user, interaction.guild):
             await interaction.response.send_message("❌ **Access Denied:** Your clearance rating cannot sign off on applicant evaluations.", ephemeral=True)
@@ -288,7 +288,8 @@ class ApplicationReviewView(discord.ui.View):
         except discord.Forbidden:
             pass
 
-    @discord.ui.button(label="Deny & Reject", style=discord.ButtonStyle.danger, emoji="❌")
+    # ADDED: Explicit custom_ids for reliable inline callback recognition
+    @discord.ui.button(label="Deny & Reject", style=discord.ButtonStyle.danger, custom_id="clerk_review:deny", emoji="❌")
     async def reject_app(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.check_hierarchy_clearance(interaction.user, interaction.guild):
             await interaction.response.send_message("❌ **Access Denied:** Your clearance rating cannot sign off on applicant evaluations.", ephemeral=True)
@@ -321,7 +322,8 @@ class MockTrialAssessmentView(discord.ui.View):
         self.applicant_id = applicant_id
         self.path_type = path_type
 
-    @discord.ui.button(label="Perform Well", style=discord.ButtonStyle.success, emoji="⭐")
+    # ADDED: Explicit custom_ids for reliable inline callback recognition
+    @discord.ui.button(label="Perform Well", style=discord.ButtonStyle.success, custom_id="mock_assessment:pass", emoji="⭐")
     async def choice_well(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         guild = interaction.guild
@@ -353,7 +355,8 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-    @discord.ui.button(label="Unsatisfactory Performance", style=discord.ButtonStyle.danger, emoji="⚠️")
+    # ADDED: Explicit custom_ids for reliable inline callback recognition
+    @discord.ui.button(label="Unsatisfactory Performance", style=discord.ButtonStyle.danger, custom_id="mock_assessment:fail", emoji="⚠️")
     async def choice_poor(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         applicant = interaction.guild.get_member(self.applicant_id)
@@ -381,7 +384,6 @@ class MockTrialAssessmentView(discord.ui.View):
 
 def setup_court_testing(bot: commands.Bot):
 
-    # CHANGED: Explicitly building commands using bot.command() style inside setup function scope
     @bot.command(name="trialcourt")
     @commands.has_permissions(administrator=True)
     async def deploy_trial_board(ctx):
