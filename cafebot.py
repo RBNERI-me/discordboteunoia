@@ -557,8 +557,11 @@ async def askme(ctx, *, user_prompt: str = ""):
             meta_data = command_data.get("meta", "none")
             embed_data = command_data.get("embed_data", {})
 
+            # Keep sliding conversation history logs
             conversation_histories[channel_id].append({"role": "user", "content": user_prompt})
             conversation_histories[channel_id].append({"role": "assistant", "content": ai_response})
+            if len(conversation_histories[channel_id]) > MAX_MEMORY * 2:
+                conversation_histories[channel_id] = conversation_histories[channel_id][2:]
 
             if reply_message:
                 await ctx.send(reply_message)
@@ -597,10 +600,14 @@ async def askme(ctx, *, user_prompt: str = ""):
                 await ctx.send(f"🧹 *AI Action: Purged `{len(purged)}` messages from this channel.*", delete_after=5)
 
             elif action == "send_embed" and embed_data:
+                hex_color = embed_data.get("color", "#704214")
+                if hex_color == "none" or not hex_color:
+                    hex_color = "#704214"
+                
                 custom_embed = discord.Embed(
                     title=embed_data.get("title", "Notice"),
                     description=embed_data.get("description", ""),
-                    color=discord.Color(int(embed_data.get("color", "#704214").lstrip("#"), 16))
+                    color=discord.Color.from_str(hex_color)
                 )
                 if embed_data.get("image_url") != "none":
                     custom_embed.set_image(url=embed_data.get("image_url"))
@@ -629,34 +636,37 @@ async def askme(ctx, *, user_prompt: str = ""):
             elif action == "create_channel":
                 target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
                 await ctx.guild.create_text_channel(name=clean_ch_name(target_name), category=target_cat)
+                await ctx.send(f"💬 *AI Action: Formed text channel `#{clean_ch_name(target_name)}`*")
                 
             elif action == "create_voice":
                 target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
                 await ctx.guild.create_voice_channel(name=target_name, category=target_cat)
+                await ctx.send(f"🔊 *AI Action: Mounted voice studio room `{target_name}`*")
                 
             elif action == "delete_channel":
                 channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
                 if channel: 
                     await channel.delete()
+                    await ctx.send(f"🗑️ *AI Action: Removed target element channel `{target_name}`*")
                     
             elif action == "rename_channel":
                 channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
                 if channel: 
                     await channel.edit(name=clean_ch_name(meta_data))
+                    await ctx.send(f"✏️ *AI Action: Renamed structural route `{target_name}` into `{meta_data}`*")
                     
             elif action == "move_channel":
                 channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
                 target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
                 if channel and target_cat:
                     await channel.edit(category=target_cat)
+                    await ctx.send(f"📦 *AI Action: Re-routed `{channel.name}` into partition category `📂 {target_cat.name}`*")
 
+        except json.JSONDecodeError:
+            await ctx.send("❌ Error parsing the AI's internal response configuration object.")
         except Exception as e:
-            await ctx.send(f"❌ Execution Failure: `{str(e)}`")
+            await ctx.send(f"⚠️ An administrative execution error occurred: `{str(e)}`")
 
-# --- INITIALIZATION EXECUTION GATE ---
-if __name__ == "__main__":
-    if DISCORD_TOKEN:
-        keep_alive()  # Spins up web server thread for hosting tracking
-        bot.run(DISCORD_TOKEN)
-    else:
-        print("❌ Error: No DISCORD_TOKEN configuration variable could be found.")
+# Run everything
+keep_alive()
+bot.run(DISCORD_TOKEN)
