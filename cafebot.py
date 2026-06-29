@@ -60,7 +60,7 @@ def extract_mentions(input_str):
     return " ".join(mentions) if mentions else input_str
 
 # =================================================================
-# UI COMPONENTS (ORDERED BY DEPENDENCY TO PREVENT NAMEERRORS)
+# UI COMPONENTS
 # =================================================================
 
 class CourtroomLogView(discord.ui.View):
@@ -371,12 +371,10 @@ async def on_ready():
     print(f"🤖 Connected to Discord as: {bot.user.name}")
     print("--------------------------------------------------")
     
-    # 1. Register the core persistent view structures
     bot.add_view(StartMotionView())
     bot.add_view(JudgeReviewView())
     bot.add_view(CourtroomLogView())
     
-    # 2. Fire up the modular court clerk testing systems
     setup_court_testing(bot)
     print("⚖️ All persistent legal networks and testing boards are online!")
 
@@ -631,22 +629,34 @@ async def askme(ctx, *, user_prompt: str = ""):
             elif action == "create_channel":
                 target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
                 await ctx.guild.create_text_channel(name=clean_ch_name(target_name), category=target_cat)
+                
             elif action == "create_voice":
                 target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
                 await ctx.guild.create_voice_channel(name=target_name, category=target_cat)
+                
             elif action == "delete_channel":
                 channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
-                if channel: await channel.delete()
+                if channel: 
+                    await channel.delete()
+                    
             elif action == "rename_channel":
                 channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
-                if channel: await channel.edit(name=clean_ch_name(meta_data) if isinstance(channel, discord.TextChannel) else meta_data)
+                if channel: 
+                    await channel.edit(name=clean_ch_name(meta_data))
+                    
+            elif action == "move_channel":
+                channel = discord.utils.get(ctx.guild.channels, name=clean_ch_name(target_name)) or discord.utils.get(ctx.guild.channels, name=target_name)
+                target_cat = discord.utils.get(ctx.guild.categories, name=meta_data)
+                if channel and target_cat:
+                    await channel.edit(category=target_cat)
 
-        except discord.Forbidden:
-            await ctx.send("❌ *Hierarchy / Permission Blocked: Make sure my role is at the top of your list.*")
-        except json.JSONDecodeError:
-            await ctx.send("❌ *Data Engine Error: Failed to structure raw JSON configurations safely.*")
         except Exception as e:
-            await ctx.send(f"❌ Execution Core Exception: {e}")
+            await ctx.send(f"❌ Execution Failure: `{str(e)}`")
 
-keep_alive()
-bot.run(DISCORD_TOKEN)
+# --- INITIALIZATION EXECUTION GATE ---
+if __name__ == "__main__":
+    if DISCORD_TOKEN:
+        keep_alive()  # Spins up web server thread for hosting tracking
+        bot.run(DISCORD_TOKEN)
+    else:
+        print("❌ Error: No DISCORD_TOKEN configuration variable could be found.")
