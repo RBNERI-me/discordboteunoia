@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import random
-import asyncio
 
 # --- CONFIGURATION PATH DETAILS ---
 TESTING_BOARD_CHANNEL_ID = 1521006976023400489  
@@ -100,18 +99,18 @@ QUESTIONS_DATA = {
 ACTIVE_TEST_SESSIONS = {}
 
 # =================================================================
-# INTERMEDIATE ROUTERS (Bypasses Modal Chaining Restrictions)
+# INTERMEDIATE BUTTON ROUTERS (Fixes Modal Chaining Restriction)
 # =================================================================
 
 class OpenSectionTwoView(discord.ui.View):
     def __init__(self, path_type, sec2_qs, sec3_qs, section1_ans):
-        super().__init__(timeout=300)
+        super().__init__(timeout=600)
         self.path_type = path_type
         self.sec2_qs = sec2_qs
         self.sec3_qs = sec3_qs
         self.section1_ans = section1_ans
 
-    @discord.ui.button(label="Begin Section 2", style=discord.ButtonStyle.primary, emoji="📝")
+    @discord.ui.button(label="Proceed to Section 2", style=discord.ButtonStyle.primary, emoji="📝", custom_id="clerk_exam:open_s2")
     async def open_s2(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = SectionTwoModal(self.path_type, self.sec2_qs, self.sec3_qs, self.section1_ans)
         await interaction.response.send_modal(modal)
@@ -120,13 +119,13 @@ class OpenSectionTwoView(discord.ui.View):
 
 class OpenSectionThreeView(discord.ui.View):
     def __init__(self, path_type, sec3_qs, section1_ans, section2_ans):
-        super().__init__(timeout=300)
+        super().__init__(timeout=600)
         self.path_type = path_type
         self.sec3_qs = sec3_qs
         self.section1_ans = section1_ans
         self.section2_ans = section2_ans
 
-    @discord.ui.button(label="Begin Section 3 (Final)", style=discord.ButtonStyle.primary, emoji="🏁")
+    @discord.ui.button(label="Proceed to Section 3 (Final)", style=discord.ButtonStyle.primary, emoji="🏁", custom_id="clerk_exam:open_s3")
     async def open_s3(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, self.section2_ans)
         await interaction.response.send_modal(modal)
@@ -173,7 +172,7 @@ class SectionThreeModal(discord.ui.Modal):
         
         for idx, (q, a) in enumerate(all_qa, start=1):
             val_text = f"*{a[:1000]}*" if a else "*No answer provided*"
-            embed.add_field(name=f"Q{idx}: {q[:250]}", value=val_text, inline=False)
+            embed.add_field(name=f"Q{idx}: {q[:240]}", value=val_text, inline=False)
 
         ping_content = f"⚖️ <@&{ROLE_CHIEF_MAGISTRATE}> <@&{ROLE_SENIOR_JUDGE}>"
         if self.path_type == "advocacy":
@@ -207,7 +206,7 @@ class SectionTwoModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         sec2_answers = [(self.sec2_qs[i], self.fields[i].value) for i in range(3)]
         view = OpenSectionThreeView(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
-        await interaction.response.send_message("✅ **Section 2 Answers Logged.** Click below to open the final section.", view=view, ephemeral=True)
+        await interaction.response.send_message("📌 **Section 2 recorded!** Press the button below to bring up the final set of questions.", view=view, ephemeral=True)
 
 
 class SectionOneModal(discord.ui.Modal):
@@ -229,7 +228,7 @@ class SectionOneModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         sec1_answers = [(self.sec1_qs[i], self.fields[i].value) for i in range(3)]
         view = OpenSectionTwoView(self.path_type, self.sec2_qs, self.sec3_qs, sec1_answers)
-        await interaction.response.send_message("✅ **Section 1 Answers Logged.** Click below to load Section 2.", view=view, ephemeral=True)
+        await interaction.response.send_message("📌 **Section 1 recorded!** Press the button below to pull up the next set of questions.", view=view, ephemeral=True)
 
 # =================================================================
 # BOARD INTERFACES AND REVIEW PIPELINES
@@ -388,7 +387,7 @@ class MockTrialAssessmentView(discord.ui.View):
         edited_embed.title = "🚫 Practical Trial Closed: Revision Required"
         edited_embed.color = discord.Color.red()
         edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}"
-        await interaction.message.edit(edited_embed, view=None)
+        await interaction.message.edit(embed=edited_embed, view=None)
 
         if applicant:
             try:
