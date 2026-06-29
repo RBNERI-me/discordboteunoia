@@ -15,7 +15,7 @@ from court_testing import (
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURATION & OWNER ACCESS ---
-OWNER_USER_ID = 964858925565595678  # Your specific Discord User ID
+OWNER_USER_ID = 1236605844733296685  # Your specific Discord User ID
 
 # --- BOT INITIALIZATION ---
 intents = discord.Intents.default()
