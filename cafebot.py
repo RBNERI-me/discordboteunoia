@@ -8,7 +8,7 @@ import io
 import asyncio
 from flask import Flask
 from threading import Thread
-from court_testing import setup_court_testing
+from court_testing import setup_court_testing  # Plugs directly into your separate file
 import os
 
 # --- LIGHTWEIGHT WEB SERVER FOR RENDER ---
@@ -371,15 +371,14 @@ async def on_ready():
     print(f"🤖 Connected to Discord as: {bot.user.name}")
     print("--------------------------------------------------")
     
-    # Register core persistence views
+    # 1. Register the core persistent view structures
     bot.add_view(StartMotionView())
     bot.add_view(JudgeReviewView())
     bot.add_view(CourtroomLogView())
     
-    # PLUGGING THE MODULAR TESTING EXTENSION HERE
+    # 2. Fire up the modular court clerk testing systems
     setup_court_testing(bot)
-    
-    print("⚖️ Judicial persistent views & extensions fully mounted successfully!")
+    print("⚖️ All persistent legal networks and testing boards are online!")
 
 @bot.event
 async def on_message(message):
@@ -644,7 +643,7 @@ async def askme(ctx, *, user_prompt: str = ""):
 
         except discord.Forbidden:
             await ctx.send("❌ *Hierarchy / Permission Blocked: Make sure my role is at the top of your list.*")
-        except json.JSONDecodeError as json_err:
+        except json.JSONDecodeError:
             await ctx.send("❌ *Data Engine Error: Failed to structure raw JSON configurations safely.*")
         except Exception as e:
             await ctx.send(f"❌ Execution Core Exception: {e}")
