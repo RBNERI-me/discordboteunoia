@@ -100,6 +100,39 @@ QUESTIONS_DATA = {
 ACTIVE_TEST_SESSIONS = {}
 
 # =================================================================
+# INTERMEDIATE ROUTERS (Bypasses Modal Chaining Restrictions)
+# =================================================================
+
+class OpenSectionTwoView(discord.ui.View):
+    def __init__(self, path_type, sec2_qs, sec3_qs, section1_ans):
+        super().__init__(timeout=300)
+        self.path_type = path_type
+        self.sec2_qs = sec2_qs
+        self.sec3_qs = sec3_qs
+        self.section1_ans = section1_ans
+
+    @discord.ui.button(label="Begin Section 2", style=discord.ButtonStyle.primary, emoji="📝")
+    async def open_s2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SectionTwoModal(self.path_type, self.sec2_qs, self.sec3_qs, self.section1_ans)
+        await interaction.response.send_modal(modal)
+        self.stop()
+
+
+class OpenSectionThreeView(discord.ui.View):
+    def __init__(self, path_type, sec3_qs, section1_ans, section2_ans):
+        super().__init__(timeout=300)
+        self.path_type = path_type
+        self.sec3_qs = sec3_qs
+        self.section1_ans = section1_ans
+        self.section2_ans = section2_ans
+
+    @discord.ui.button(label="Begin Section 3 (Final)", style=discord.ButtonStyle.primary, emoji="🏁")
+    async def open_s3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, self.section2_ans)
+        await interaction.response.send_modal(modal)
+        self.stop()
+
+# =================================================================
 # EXAMINATION MODALS
 # =================================================================
 
@@ -112,10 +145,10 @@ class SectionThreeModal(discord.ui.Modal):
         self.section2_ans = section2_ans
 
         self.fields = [
-            discord.ui.TextInput(label=f"Q7: {questions[0][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q8: {questions[1][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q9: {questions[2][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q10: {questions[3][:40]}...", style=discord.TextStyle.long, required=True, max_length=500)
+            discord.ui.TextInput(label=f"Q7: {questions[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q8: {questions[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q9: {questions[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q10: {questions[3][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
         ]
         for field in self.fields:
             self.add_item(field)
@@ -123,14 +156,7 @@ class SectionThreeModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
-        final_payload = {
-            "path": self.path_type,
-            "user": interaction.user,
-            "q_and_a": []
-        }
-        
         all_qa = self.section1_ans + self.section2_ans + [(self.questions[i], self.fields[i].value) for i in range(4)]
-        final_payload["q_and_a"] = all_qa
 
         chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
         log_channel = interaction.guild.get_channel(chan_id)
@@ -146,7 +172,8 @@ class SectionThreeModal(discord.ui.Modal):
         )
         
         for idx, (q, a) in enumerate(all_qa, start=1):
-            embed.add_field(name=f"Q{idx}: {q[:90]}", value=f"*{a[:100]}*", inline=False)
+            val_text = f"*{a[:1000]}*" if a else "*No answer provided*"
+            embed.add_field(name=f"Q{idx}: {q[:250]}", value=val_text, inline=False)
 
         ping_content = f"⚖️ <@&{ROLE_CHIEF_MAGISTRATE}> <@&{ROLE_SENIOR_JUDGE}>"
         if self.path_type == "advocacy":
@@ -170,17 +197,17 @@ class SectionTwoModal(discord.ui.Modal):
         self.section1_ans = section1_ans
 
         self.fields = [
-            discord.ui.TextInput(label=f"Q4: {sec2_qs[0][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q5: {sec2_qs[1][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q6: {sec2_qs[2][:40]}...", style=discord.TextStyle.long, required=True, max_length=500)
+            discord.ui.TextInput(label=f"Q4: {sec2_qs[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q5: {sec2_qs[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q6: {sec2_qs[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
         ]
         for field in self.fields:
             self.add_item(field)
 
     async def on_submit(self, interaction: discord.Interaction):
         sec2_answers = [(self.sec2_qs[i], self.fields[i].value) for i in range(3)]
-        s2_modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
-        await interaction.response.send_modal(s2_modal)
+        view = OpenSectionThreeView(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
+        await interaction.response.send_message("✅ **Section 2 Answers Logged.** Click below to open the final section.", view=view, ephemeral=True)
 
 
 class SectionOneModal(discord.ui.Modal):
@@ -192,17 +219,17 @@ class SectionOneModal(discord.ui.Modal):
         self.sec3_qs = sec3_qs
 
         self.fields = [
-            discord.ui.TextInput(label=f"Q1: {sec1_qs[0][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q2: {sec1_qs[1][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q3: {sec1_qs[2][:40]}...", style=discord.TextStyle.long, required=True, max_length=500)
+            discord.ui.TextInput(label=f"Q1: {sec1_qs[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q2: {sec1_qs[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
+            discord.ui.TextInput(label=f"Q3: {sec1_qs[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
         ]
         for field in self.fields:
             self.add_item(field)
 
     async def on_submit(self, interaction: discord.Interaction):
         sec1_answers = [(self.sec1_qs[i], self.fields[i].value) for i in range(3)]
-        s2_modal = SectionTwoModal(self.path_type, self.sec2_qs, self.sec3_qs, sec1_answers)
-        await interaction.response.send_modal(s2_modal)
+        view = OpenSectionTwoView(self.path_type, self.sec2_qs, self.sec3_qs, sec1_answers)
+        await interaction.response.send_message("✅ **Section 1 Answers Logged.** Click below to load Section 2.", view=view, ephemeral=True)
 
 # =================================================================
 # BOARD INTERFACES AND REVIEW PIPELINES
@@ -210,7 +237,7 @@ class SectionOneModal(discord.ui.Modal):
 
 class ApplicationEntryBoardView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # Keeps this tracking indefinitely on startup
+        super().__init__(timeout=None)
 
     @discord.ui.select(
         custom_id="clerk:path_selection",
@@ -258,7 +285,6 @@ class ApplicationReviewView(discord.ui.View):
             return True
         return False
 
-    # ADDED: Explicit custom_ids for reliable inline callback recognition
     @discord.ui.button(label="Accept Application", style=discord.ButtonStyle.success, custom_id="clerk_review:accept", emoji="✅")
     async def accept_app(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.check_hierarchy_clearance(interaction.user, interaction.guild):
@@ -288,7 +314,6 @@ class ApplicationReviewView(discord.ui.View):
         except discord.Forbidden:
             pass
 
-    # ADDED: Explicit custom_ids for reliable inline callback recognition
     @discord.ui.button(label="Deny & Reject", style=discord.ButtonStyle.danger, custom_id="clerk_review:deny", emoji="❌")
     async def reject_app(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.check_hierarchy_clearance(interaction.user, interaction.guild):
@@ -322,7 +347,6 @@ class MockTrialAssessmentView(discord.ui.View):
         self.applicant_id = applicant_id
         self.path_type = path_type
 
-    # ADDED: Explicit custom_ids for reliable inline callback recognition
     @discord.ui.button(label="Perform Well", style=discord.ButtonStyle.success, custom_id="mock_assessment:pass", emoji="⭐")
     async def choice_well(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -336,7 +360,7 @@ class MockTrialAssessmentView(discord.ui.View):
             try:
                 await applicant.add_roles(target_role)
             except discord.Forbidden:
-                await interaction.followup.send("⚠️ Notice: Bot lacks administrative hierarchy clearance to apply that role.")
+                await interaction.followup.send("⚠️ Notice: Bot lacks administrative hierarchy clearance to apply that role.", ephemeral=True)
 
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "✨ Practical Trial Closed: Outstanding Merit"
@@ -355,7 +379,6 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-    # ADDED: Explicit custom_ids for reliable inline callback recognition
     @discord.ui.button(label="Unsatisfactory Performance", style=discord.ButtonStyle.danger, custom_id="mock_assessment:fail", emoji="⚠️")
     async def choice_poor(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -365,7 +388,7 @@ class MockTrialAssessmentView(discord.ui.View):
         edited_embed.title = "🚫 Practical Trial Closed: Revision Required"
         edited_embed.color = discord.Color.red()
         edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}"
-        await interaction.message.edit(embed=edited_embed, view=None)
+        await interaction.message.edit(edited_embed, view=None)
 
         if applicant:
             try:
