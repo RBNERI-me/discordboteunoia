@@ -4,23 +4,20 @@ import random
 import asyncio
 
 # --- CONFIGURATION PATH DETAILS ---
-# Replace these placeholder IDs with your live Discord Server IDs
-TESTING_BOARD_CHANNEL_ID = 1521006976023400489  # Channel where the application board embed stays
-ADVOCACY_LOG_CHANNEL_ID = 1521007129899827302  # Channel where Advocacy submissions go
-JUDICIAL_LOG_CHANNEL_ID = 1521007158823485551   # Channel where Judicial submissions go
+TESTING_BOARD_CHANNEL_ID = 1521006976023400489  
+ADVOCACY_LOG_CHANNEL_ID = 1521007129899827302  
+JUDICIAL_LOG_CHANNEL_ID = 1521007158823485551   
 
-MOCK_TRIAL_CATEGORY_ID = 1521007475602755655    # Category where Mock Trial rooms are built
+MOCK_TRIAL_CATEGORY_ID = 1521007475602755655    
 
-# ROLE CONFIGURATION IDs
 ROLE_CHIEF_MAGISTRATE = 1519858689941573794
 ROLE_SENIOR_JUDGE = 1519858791275823195
 ROLE_BARRISTER = 1519893292765024368
 
-# ASSIGNMENT ROLE TARGETS ON SUCCESSFUL MOCK TRIAL
 ROLE_ADVOCACY_GRADUATE = 1519893345328173139 
 ROLE_JUDICIAL_GRADUATE = 1519858926559039539
 
-# --- DATA POOL: 10 DETAILED QUESTIONS PER SECTION PER PATH ---
+# --- DATA POOL ---
 QUESTIONS_DATA = {
     "advocacy": {
         "sec1": [
@@ -100,11 +97,10 @@ QUESTIONS_DATA = {
     }
 }
 
-# --- APPLICANT SESSION STATE TRACKING ---
 ACTIVE_TEST_SESSIONS = {}
 
 # =================================================================
-# EXAMINATION MODALS (PAGED INGESTION SYSTEM)
+# EXAMINATION MODALS
 # =================================================================
 
 class SectionThreeModal(discord.ui.Modal):
@@ -115,7 +111,6 @@ class SectionThreeModal(discord.ui.Modal):
         self.section1_ans = section1_ans
         self.section2_ans = section2_ans
 
-        # Section 3 requires exactly 4 questions
         self.fields = [
             discord.ui.TextInput(label=f"Q7: {questions[0][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
             discord.ui.TextInput(label=f"Q8: {questions[1][:40]}...", style=discord.TextStyle.long, required=True, max_length=500),
@@ -128,37 +123,32 @@ class SectionThreeModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
-        # Compile all answers into a master layout dictionary
         final_payload = {
             "path": self.path_type,
             "user": interaction.user,
             "q_and_a": []
         }
         
-        # Merge Section 1, 2, and 3 responses
         all_qa = self.section1_ans + self.section2_ans + [(self.questions[i], self.fields[i].value) for i in range(4)]
         final_payload["q_and_a"] = all_qa
 
-        # Select target logging channel based on path
-        chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else TYPE_LOG_CH = JUDICIAL_LOG_CHANNEL_ID
+        # TYPO FIXED HERE
+        chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
         log_channel = interaction.guild.get_channel(chan_id)
         
         if not log_channel:
             await interaction.followup.send("❌ Error contacting the department review log. Contact administration.", ephemeral=True)
             return
 
-        # Prepare review embed block
         embed = discord.Embed(
             title=f"📋 New Court Clerk Application | {self.path_type.upper()} PATH",
             description=f"**Applicant:** {interaction.user.mention} ({interaction.user.id})\n**Status:** 🟡 Pending Department Grading",
             color=discord.Color.orange()
         )
         
-        # Split Q&A across embed fields up to limits safely
         for idx, (q, a) in enumerate(all_qa, start=1):
             embed.add_field(name=f"Q{idx}: {q[:90]}", value=f"*{a[:100]}*", inline=False)
 
-        # Build notification broadcast pings
         ping_content = f"⚖️ <@&{ROLE_CHIEF_MAGISTRATE}> <@&{ROLE_SENIOR_JUDGE}>"
         if self.path_type == "advocacy":
             ping_content += f" <@&{ROLE_BARRISTER}>"
@@ -190,8 +180,6 @@ class SectionTwoModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         sec2_answers = [(self.sec2_qs[i], self.fields[i].value) for i in range(3)]
-        
-        # Advance directly into final Section Three modal block
         s3_modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
         await interaction.response.send_modal(s3_modal)
 
@@ -214,8 +202,6 @@ class SectionOneModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         sec1_answers = [(self.sec1_qs[i], self.fields[i].value) for i in range(3)]
-        
-        # Advance directly into Section Two modal block
         s2_modal = SectionTwoModal(self.path_type, self.sec2_qs, self.sec3_qs, sec1_answers)
         await interaction.response.send_modal(s2_modal)
 
@@ -239,23 +225,20 @@ class ApplicationEntryBoardView(discord.ui.View):
         chosen_path = select.values[0]
         
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
-            await interaction.response.send_message("❌ **Active Instance Alert:** You already have an evaluation running. Finish your current submission.", ephemeral=True)
+            await interaction.response.send_message("❌ **Active Instance Alert:** You already have an evaluation running.", ephemeral=True)
             return
 
-        # Gather pools and draw unique randomized variants matching position rules
         pool = QUESTIONS_DATA[chosen_path]
         sec1_chosen = random.sample(pool["sec1"], 3)
         sec2_chosen = random.sample(pool["sec2"], 3)
         sec3_chosen = random.sample(pool["sec3"], 4)
 
-        # Shuffle selection structures to maximize positional randomness
         random.shuffle(sec1_chosen)
         random.shuffle(sec2_chosen)
         random.shuffle(sec3_chosen)
 
         ACTIVE_TEST_SESSIONS[interaction.user.id] = True
         
-        # Trigger entry modal interface
         first_modal = SectionOneModal(chosen_path, sec1_chosen, sec2_chosen, sec3_chosen)
         await interaction.response.send_modal(first_modal)
 
@@ -267,7 +250,6 @@ class ApplicationReviewView(discord.ui.View):
         self.path_type = path_type
 
     def check_hierarchy_clearance(self, user: discord.Member, guild: discord.Guild) -> bool:
-        """Verifies hierarchical permissions. Chief Magistrate overrides all systems completely."""
         chief_role = guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge_role = guild.get_role(ROLE_SENIOR_JUDGE)
         
@@ -284,20 +266,17 @@ class ApplicationReviewView(discord.ui.View):
             return
 
         await interaction.response.defer()
-        
         applicant = interaction.guild.get_member(self.applicant_id)
         if not applicant:
             await interaction.followup.send("❌ Error: Applicant could not be located in this server map.", ephemeral=True)
             return
 
-        # Transform review board embed layout cards
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = f"⚖️ Application Approved | Entry Finalized"
         edited_embed.color = discord.Color.green()
         edited_embed.description = f"**Applicant:** {applicant.mention}\n**Authorized Verdict:** ✅ Accepted into Mock Trial Stage\n**Reviewing Officer:** {interaction.user.mention}"
         await interaction.message.edit(embed=edited_embed, view=None)
 
-        # Notify applicant
         try:
             dm_embed = discord.Embed(
                 title="⚖️ Court Clerk Assessment Passed!",
@@ -316,7 +295,6 @@ class ApplicationReviewView(discord.ui.View):
             return
 
         await interaction.response.defer()
-        
         applicant = interaction.guild.get_member(self.applicant_id)
         
         edited_embed = interaction.message.embeds[0]
@@ -358,7 +336,6 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 await interaction.followup.send("⚠️ Notice: Bot lacks administrative hierarchy clearance to apply that role.")
 
-        # Resolve board view text updates
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "✨ Practical Trial Closed: Outstanding Merit"
         edited_embed.color = discord.Color.green()
@@ -399,11 +376,12 @@ class MockTrialAssessmentView(discord.ui.View):
                 pass
 
 # =================================================================
-# COMMAND SETS & LIFECYCLE ROUTINES
+# FIXED COMMAND REGISTRATION PIPELINE
 # =================================================================
 
 def setup_court_testing(bot: commands.Bot):
 
+    # CHANGED: Explicitly building commands using bot.command() style inside setup function scope
     @bot.command(name="trialcourt")
     @commands.has_permissions(administrator=True)
     async def deploy_trial_board(ctx):
@@ -429,7 +407,6 @@ def setup_court_testing(bot: commands.Bot):
     @bot.command(name="mocktrial")
     async def start_mock_trial(ctx, applicant: discord.Member, path_type: str):
         """Deploys a localized text courtroom isolating the assessor and applicant."""
-        # Validate authorization clearances
         chief_role = ctx.guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge = ctx.guild.get_role(ROLE_SENIOR_JUDGE)
         
@@ -509,7 +486,3 @@ def setup_court_testing(bot: commands.Bot):
         
         grading_view = MockTrialAssessmentView(applicant_id=applicant.id, path_type=clean_path)
         await ctx.send(embed=embed, view=grading_view)
-
-    # Mount persistent listeners on the bot lifecycle pipeline
-    bot.add_view(ApplicationEntryBoardView())
-    print("🚀 Court Testing Extension components mounted smoothly and are ready for deployment!")
