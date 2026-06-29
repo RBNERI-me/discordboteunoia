@@ -174,9 +174,12 @@ class SectionThreeModal(discord.ui.Modal):
             val_text = f"*{a[:1000]}*" if a else "*No answer provided*"
             embed.add_field(name=f"Q{idx}: {q[:240]}", value=val_text, inline=False)
 
-        ping_content = f"⚖️ <@&{ROLE_CHIEF_MAGISTRATE}> <@&{ROLE_SENIOR_JUDGE}>"
+        # --- MODIFIED MENTION LOGIC ---
+        # Isolate the ping content strictly by division type
         if self.path_type == "advocacy":
-            ping_content += f" <@&{ROLE_BARRISTER}>"
+            ping_content = f"⚖️ <@&{ROLE_BARRISTER}>"
+        else:
+            ping_content = f"⚖️ <@&{ROLE_SENIOR_JUDGE}>"
 
         review_view = ApplicationReviewView(applicant_id=interaction.user.id, path_type=self.path_type)
         await log_channel.send(content=ping_content, embed=embed, view=review_view)
