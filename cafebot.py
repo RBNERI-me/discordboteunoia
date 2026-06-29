@@ -73,17 +73,15 @@ class CourtroomLogView(discord.ui.View):
 
     @discord.ui.button(label="Generate Court Log & Close", style=discord.ButtonStyle.secondary, custom_id="courtroom:archive_log", emoji="📜")
     async def archive_log_click(self, interaction: discord.Interaction, button: discord.ui.Button):
-        judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
+        # Immediate defer to prevent interaction timeouts
+        await interaction.response.defer()
         
-        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
-            pass
-        else:
-            await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
+        judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
+        if not ((judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator):
+            await interaction.followup.send("❌ **Access Denied:** Only verified judicial officers can execute courtroom logs.", ephemeral=True)
             return
 
-        await interaction.response.defer()
         await interaction.followup.send("⏳ *Compiling transcript files and packaging legal archives...*")
-
         log_channel = interaction.guild.get_channel(COURT_LOGS_CHANNEL_ID)
         
         transcript_text = f"=== COURTROOM TRANSCRIPT LOG FOR {self.docket} ===\n\n"
@@ -112,7 +110,10 @@ class CourtroomLogView(discord.ui.View):
 
         await interaction.followup.send("✅ Archive file delivered safely. This channel will now self-destruct in 10 seconds.")
         await asyncio.sleep(10)
-        await interaction.channel.delete()
+        try:
+            await interaction.channel.delete()
+        except discord.HTTPException:
+            pass
 
 
 class JudgeReviewView(discord.ui.View):
@@ -129,18 +130,17 @@ class JudgeReviewView(discord.ui.View):
 
     @discord.ui.button(label="Accept Hearing", style=discord.ButtonStyle.success, custom_id="judge:accept_hearing", emoji="✅")
     async def accept_hearing(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Immediate defer to secure the interaction channel window right away
+        await interaction.response.defer()
+        
         judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
         chief_magistrate_role = interaction.guild.get_role(CHIEF_MAGISTRATE_ROLE_ID)
         
-        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
-            pass
-        else:
-            await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can accept this request.", ephemeral=True)
+        if not ((judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator):
+            await interaction.followup.send("❌ **Access Denied:** Only verified judicial officers can accept this request.", ephemeral=True)
             return
 
-        await interaction.response.defer()
         category = interaction.guild.get_channel(HEARING_CATEGORY_ID)
-        
         clean_docket = self.docket.lower()
         channel_name = f"🏛️-{clean_docket}-hearing"
 
@@ -153,16 +153,17 @@ class JudgeReviewView(discord.ui.View):
         async def apply_user_overwrite(username_str):
             if not username_str or username_str.strip().lower() == "none":
                 return None
-            clean_name = username_str.replace("@", "").replace("<", "").replace(">", "").replace("!", "").strip().split()[0]
-            if clean_name.isdigit():
+            clean_id_match = re.search(r'\d{17,19}', username_str)
+            if clean_id_match:
                 try:
-                    member = await interaction.guild.fetch_member(int(clean_name))
+                    member = await interaction.guild.fetch_member(int(clean_id_match.group()))
                     if member:
                         overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
                         return member
                 except discord.HTTPException:
                     pass
             
+            clean_name = username_str.replace("@", "").replace("<", "").replace(">", "").replace("!", "").strip()
             member = discord.utils.get(interaction.guild.members, name=clean_name) or discord.utils.get(interaction.guild.members, display_name=clean_name)
             if member:
                 overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
@@ -236,14 +237,12 @@ class JudgeReviewView(discord.ui.View):
 
     @discord.ui.button(label="Deny & Dismiss", style=discord.ButtonStyle.danger, custom_id="judge:deny_hearing", emoji="❌")
     async def deny_hearing(self, interaction: discord.Interaction, button: discord.ui.Button):
-        judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
-        if (judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator:
-            pass
-        else:
-            await interaction.response.send_message("❌ **Access Denied:** Only verified judicial officers can reject this request.", ephemeral=True)
-            return
-
         await interaction.response.defer()
+        
+        judge_role = interaction.guild.get_role(JUDGE_ROLE_ID)
+        if not ((judge_role and judge_role in interaction.user.roles) or interaction.user.guild_permissions.administrator):
+            await interaction.followup.send("❌ **Access Denied:** Only verified judicial officers can reject this request.", ephemeral=True)
+            return
 
         filer = interaction.guild.get_member(self.filer_id)
         if filer:
@@ -375,8 +374,11 @@ async def on_ready():
     bot.add_view(JudgeReviewView())
     bot.add_view(CourtroomLogView())
     
-    setup_court_testing(bot)
-    print("⚖️ All persistent legal networks and testing boards are online!")
+    try:
+        setup_court_testing(bot)
+        print("⚖️ All persistent legal networks and testing boards are online!")
+    except Exception as e:
+        print(f"⚠️ Warning loading testing board module configurations: {e}")
 
 @bot.event
 async def on_message(message):
@@ -555,7 +557,7 @@ async def askme(ctx, *, user_prompt: str = ""):
             action = command_data.get("action", "none")
             target_name = command_data.get("target_name", "none")
             meta_data = command_data.get("meta", "none")
-            embed_data = command_data.get("embed_data", {})
+            embed_data = command_data.get("embed_data", {}) if isinstance(command_data.get("embed_data"), dict) else {}
 
             # Keep sliding conversation history logs
             conversation_histories[channel_id].append({"role": "user", "content": user_prompt})
@@ -609,7 +611,7 @@ async def askme(ctx, *, user_prompt: str = ""):
                     description=embed_data.get("description", ""),
                     color=discord.Color.from_str(hex_color)
                 )
-                if embed_data.get("image_url") != "none":
+                if embed_data.get("image_url") and embed_data.get("image_url") != "none":
                     custom_embed.set_image(url=embed_data.get("image_url"))
                 target_chan = discord.utils.get(ctx.guild.text_channels, name=clean_ch_name(target_name)) or ctx.channel
                 await target_chan.send(embed=custom_embed)
