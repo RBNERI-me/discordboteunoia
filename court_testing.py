@@ -207,10 +207,8 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # ADJUSTMENT MADE HERE: 
-        # Instead of blocking the user with an "Active Instance Alert", we cleanly drop 
-        # any previous cache entries associated with their ID. This guarantees they can 
-        # always click it to restart if their DMs got closed or stuck.
+        # FIXED: The conditional error check blocking the user has been completely removed.
+        # This safely pops any old cache data tracking their session, allowing immediate re-application.
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
@@ -423,7 +421,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your practical courtroom simulation handling missed necessary structural benchmarks. Review procedures and coordinate with your department senior for rescheduled profiling.",
                     color=discord.Color.red()
                 )
-                await applicant.send(msg)
+                await applicant.send(embed=msg)
             except discord.Forbidden:
                 pass
 
