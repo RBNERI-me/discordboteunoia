@@ -118,7 +118,7 @@ class DMReadyCheckView(discord.ui.View):
         self.stop()
 
     async def run_exam_sequence(self, interaction: discord.Interaction):
-        await interaction.response.send_message("✍️ **Verification Confirmed.** The examination has begun. Questions will be sent one at a time. Please read each item thoroughly.")
+        await interaction.response.send_message("✍️ **Verification Confirmed.** The examination has begun. Questions will be sent one at a time. Please read each item thoroughly.\n*Note: You can type `exit` or `cancel` at any time to withdraw from the application.*")
         
         user = interaction.user
         pool = QUESTIONS_DATA[self.path_type]
@@ -137,13 +137,21 @@ class DMReadyCheckView(discord.ui.View):
         for idx, question in enumerate(all_questions, start=1):
             embed = discord.Embed(
                 title=f"📝 Question {idx} of 10",
-                description=f"**{question}**\n\n*Type your complete legal response below and hit send.*",
+                description=f"**{question}**\n\n*Type your complete legal response below and hit send. (Or type `exit` to quit)*",
                 color=discord.Color.blue()
             )
             await user.send(embed=embed)
             
             try:
                 msg = await self.bot.wait_for('message', check=check, timeout=1200) # 20 minutes per answer limit
+                
+                # Check for explicit cancellation exit commands
+                if msg.content.lower().strip() in ["exit", "cancel"]:
+                    await user.send("🛑 **Application Cancelled:** You have chosen to exit the application process. Your answers have been discarded and your session is closed.")
+                    if user.id in ACTIVE_TEST_SESSIONS:
+                        del ACTIVE_TEST_SESSIONS[user.id]
+                    return
+
                 all_qa_pairs.append((question, msg.content))
             except asyncio.TimeoutError:
                 await user.send("❌ **Session Terminated:** Answer collection period timed out due to excessive inactivity.")
