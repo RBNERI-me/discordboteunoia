@@ -196,8 +196,9 @@ class ApplicationEntryBoardView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
+    # CHANGED: custom_id was updated to clear the stale selection listener cache from Discord
     @discord.ui.select(
-        custom_id="clerk:path_selection",
+        custom_id="clerk:path_selection_v2",
         placeholder="Choose your specialized courtroom path trajectory...",
         options=[
             discord.SelectOption(label="Advocacy Division Track", value="advocacy", description="Focuses on litigation, client defense, and evidence presentation.", emoji="👔"),
@@ -207,7 +208,7 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # FIXED: Removed the old blocking error completely to clear stale caches immediately.
+        # GUARANTEED RESET: Wipes out data from dict tracking arrays right away.
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
@@ -373,7 +374,6 @@ class MockTrialAssessmentView(discord.ui.View):
         target_role_id = ROLE_ADVOCACY_GRADUATE if self.path_type == "advocacy" else ROLE_JUDICIAL_GRADUATE
         target_role = guild.get_role(target_role_id)
 
-        # FIXED: Improved safety here. If hierarchy fails, the channel notification prints out clearly.
         role_failed = False
         if applicant and target_role:
             try:
