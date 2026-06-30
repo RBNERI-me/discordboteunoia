@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import random
-import asyncio  # Imported for handling the deletion delay safely
+import asyncio
 
 # --- CONFIGURATION PATH DETAILS ---
 TESTING_BOARD_CHANNEL_ID = 1521006976023400489  
@@ -100,140 +100,7 @@ QUESTIONS_DATA = {
 ACTIVE_TEST_SESSIONS = {}
 
 # =================================================================
-# INTERMEDIATE BUTTON ROUTERS (Fixes Modal Chaining Restriction)
-# =================================================================
-
-class OpenSectionTwoView(discord.ui.View):
-    def __init__(self, path_type, sec2_qs, sec3_qs, section1_ans):
-        super().__init__(timeout=600)
-        self.path_type = path_type
-        self.sec2_qs = sec2_qs
-        self.sec3_qs = sec3_qs
-        self.section1_ans = section1_ans
-
-    @discord.ui.button(label="Proceed to Section 2", style=discord.ButtonStyle.primary, emoji="📝", custom_id="clerk_exam:open_s2")
-    async def open_s2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SectionTwoModal(self.path_type, self.sec2_qs, self.sec3_qs, self.section1_ans)
-        await interaction.response.send_modal(modal)
-        self.stop()
-
-
-class OpenSectionThreeView(discord.ui.View):
-    def __init__(self, path_type, sec3_qs, section1_ans, section2_ans):
-        super().__init__(timeout=600)
-        self.path_type = path_type
-        self.sec3_qs = sec3_qs
-        self.section1_ans = section1_ans
-        self.section2_ans = section2_ans
-
-    @discord.ui.button(label="Proceed to Section 3 (Final)", style=discord.ButtonStyle.primary, emoji="🏁", custom_id="clerk_exam:open_s3")
-    async def open_s3(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SectionThreeModal(self.path_type, self.sec3_qs, self.section1_ans, self.section2_ans)
-        await interaction.response.send_modal(modal)
-        self.stop()
-
-# =================================================================
-# EXAMINATION MODALS
-# =================================================================
-
-class SectionThreeModal(discord.ui.Modal):
-    def __init__(self, path_type, questions, section1_ans, section2_ans):
-        super().__init__(title=f"{path_type.title()} Exam: Section 3 (Final)")
-        self.path_type = path_type
-        self.questions = questions
-        self.section1_ans = section1_ans
-        self.section2_ans = section2_ans
-
-        self.fields = [
-            discord.ui.TextInput(label=f"Q7: {questions[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q8: {questions[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q9: {questions[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q10: {questions[3][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
-        ]
-        for field in self.fields:
-            self.add_item(field)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        all_qa = self.section1_ans + self.section2_ans + [(self.questions[i], self.fields[i].value) for i in range(4)]
-
-        chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
-        log_channel = interaction.guild.get_channel(chan_id)
-        
-        if not log_channel:
-            await interaction.followup.send("❌ Error contacting the department review log. Contact administration.", ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title=f"📋 New Court Clerk Application | {self.path_type.upper()} PATH",
-            description=f"**Applicant:** {interaction.user.mention} ({interaction.user.id})\n**Status:** 🟡 Pending Department Grading",
-            color=discord.Color.orange()
-        )
-        
-        for idx, (q, a) in enumerate(all_qa, start=1):
-            val_text = f"*{a[:1000]}*" if a else "*No answer provided*"
-            embed.add_field(name=f"Q{idx}: {q[:240]}", value=val_text, inline=False)
-
-        if self.path_type == "advocacy":
-            ping_content = f"⚖️ <@&{ROLE_BARRISTER}>"
-        else:
-            ping_content = f"⚖️ <@&{ROLE_SENIOR_JUDGE}>"
-
-        review_view = ApplicationReviewView(applicant_id=interaction.user.id, path_type=self.path_type)
-        await log_channel.send(content=ping_content, embed=embed, view=review_view)
-        
-        if interaction.user.id in ACTIVE_TEST_SESSIONS:
-            del ACTIVE_TEST_SESSIONS[interaction.user.id]
-            
-        await interaction.followup.send("✨ **Your multi-stage examination has been compiled and logged for high-ranking judicial inspection.**", ephemeral=True)
-
-
-class SectionTwoModal(discord.ui.Modal):
-    def __init__(self, path_type, sec2_qs, sec3_qs, section1_ans):
-        super().__init__(title=f"{path_type.title()} Exam: Section 2")
-        self.path_type = path_type
-        self.sec2_qs = sec2_qs
-        self.sec3_qs = sec3_qs
-        self.section1_ans = section1_ans
-
-        self.fields = [
-            discord.ui.TextInput(label=f"Q4: {sec2_qs[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q5: {sec2_qs[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q6: {sec2_qs[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
-        ]
-        for field in self.fields:
-            self.add_item(field)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        sec2_answers = [(self.sec2_qs[i], self.fields[i].value) for i in range(3)]
-        view = OpenSectionThreeView(self.path_type, self.sec3_qs, self.section1_ans, sec2_answers)
-        await interaction.response.send_message("📌 **Section 2 recorded!** Press the button below to bring up the final set of questions.", view=view, ephemeral=True)
-
-
-class SectionOneModal(discord.ui.Modal):
-    def __init__(self, path_type, sec1_qs, sec2_qs, sec3_qs):
-        super().__init__(title=f"{path_type.title()} Exam: Section 1")
-        self.path_type = path_type
-        self.sec1_qs = sec1_qs
-        self.sec2_qs = sec2_qs
-        self.sec3_qs = sec3_qs
-
-        self.fields = [
-            discord.ui.TextInput(label=f"Q1: {sec1_qs[0][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q2: {sec1_qs[1][:35]}...", style=discord.TextStyle.long, required=True, max_length=500),
-            discord.ui.TextInput(label=f"Q3: {sec1_qs[2][:35]}...", style=discord.TextStyle.long, required=True, max_length=500)
-        ]
-        for field in self.fields:
-            self.add_item(field)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        sec1_answers = [(self.sec1_qs[i], self.fields[i].value) for i in range(3)]
-        view = OpenSectionTwoView(self.path_type, self.sec2_qs, self.sec3_qs, sec1_answers)
-        await interaction.response.send_message("📌 **Section 1 recorded!** Press the button below to pull up the next set of questions.", view=view, ephemeral=True)
-
-# =================================================================
-# BOARD INTERFACES AND REVIEW PIPELINES
+# DM APPLICATION SELECTION & RUNNER VIEWS
 # =================================================================
 
 class ApplicationEntryBoardView(discord.ui.View):
@@ -259,15 +126,138 @@ class ApplicationEntryBoardView(discord.ui.View):
         sec1_chosen = random.sample(pool["sec1"], 3)
         sec2_chosen = random.sample(pool["sec2"], 3)
         sec3_chosen = random.sample(pool["sec3"], 4)
-
-        random.shuffle(sec1_chosen)
-        random.shuffle(sec2_chosen)
-        random.shuffle(sec3_chosen)
-
-        ACTIVE_TEST_SESSIONS[interaction.user.id] = True
         
-        first_modal = SectionOneModal(chosen_path, sec1_chosen, sec2_chosen, sec3_chosen)
-        await interaction.response.send_modal(first_modal)
+        all_questions = sec1_chosen + sec2_chosen + sec3_chosen
+        random.shuffle(all_questions)  # Keep full randomized list to present one by one
+
+        try:
+            view = DMReadyConfirmationView(interaction.client, chosen_path, all_questions, interaction.guild.id)
+            embed = discord.Embed(
+                title="🏛️ Application Initialization Portal",
+                description=f"You have requested the **{chosen_path.upper()} TRACK** written entrance process.\n\n"
+                            "Click **'I am Ready'** below to trigger the 10-question evaluation sequential delivery here in your DMs.",
+                color=discord.Color.blue()
+            )
+            await interaction.user.send(embed=embed, view=view)
+            ACTIVE_TEST_SESSIONS[interaction.user.id] = True
+            await interaction.response.send_message("📥 **Application Initiated!** Please check your Direct Messages to begin.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ **Error:** Unable to open DM channel with you. Please adjust privacy updates to allow server members to message.", ephemeral=True)
+
+
+class DMReadyConfirmationView(discord.ui.View):
+    def __init__(self, bot, path_type, questions, guild_id):
+        super().__init__(timeout=600)
+        self.bot = bot
+        self.path_type = path_type
+        self.questions = questions
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="I am Ready", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        button.disabled = True
+        await interaction.message.edit(view=self.view)
+        
+        applicant_answers = []
+        
+        for idx, question in enumerate(self.questions, start=1):
+            q_embed = discord.Embed(
+                title=f"📝 Assessment Question {idx} of 10",
+                description=f"**{question}**\n\n*Please send your written response as a standard message below.*",
+                color=discord.Color.orange()
+            )
+            await interaction.user.send(embed=q_embed)
+            
+            def check(m):
+                return m.author.id == interaction.user.id and isinstance(m.channel, discord.DMChannel)
+                
+            try:
+                msg = await self.bot.wait_for('message', check=check, timeout=1200)
+                applicant_answers.append((question, msg.content))
+            except asyncio.TimeoutError:
+                await interaction.user.send("⏱️ **Session Timed Out:** You exceeded the 20-minute target limit on a single question entry.")
+                if interaction.user.id in ACTIVE_TEST_SESSIONS:
+                    del ACTIVE_TEST_SESSIONS[interaction.user.id]
+                return
+                
+        # Compilation Stage Completed
+        await interaction.user.send("✨ **Processing Complete:** Your profile has been formatted and submitted for high-ranking judicial review.")
+        
+        guild = self.bot.get_guild(self.guild_id)
+        chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
+        log_channel = guild.get_channel(chan_id) if guild else None
+        
+        if log_channel:
+            embed = discord.Embed(
+                title=f"📋 New Court Clerk Application | {self.path_type.upper()} PATH",
+                description=f"**Applicant:** {interaction.user.mention} ({interaction.user.id})\n**Status:** 🟡 Pending Department Grading",
+                color=discord.Color.orange()
+            )
+            for idx, (q, a) in enumerate(applicant_answers, start=1):
+                embed.add_field(name=f"Q{idx}: {q[:240]}", value=f"*{a[:1000]}*" if a else "*No answer*", inline=False)
+                
+            ping_content = f"⚖️ <@&{ROLE_BARRISTER}>" if self.path_type == "advocacy" else f"⚖️ <@&{ROLE_SENIOR_JUDGE}>"
+            review_view = ApplicationReviewView(applicant_id=interaction.user.id, path_type=self.path_type)
+            await log_channel.send(content=ping_content, embed=embed, view=review_view)
+            
+        if interaction.user.id in ACTIVE_TEST_SESSIONS:
+            del ACTIVE_TEST_SESSIONS[interaction.user.id]
+
+# =================================================================
+# POST-ACCEPTANCE PROGRESSION & TRIAL MANAGEMENT
+# =================================================================
+
+class DMApplicantMockReadyView(discord.ui.View):
+    def __init__(self, bot, reviewer_id, guild_id, path_type):
+        super().__init__(timeout=86400)
+        self.bot = bot
+        self.reviewer_id = reviewer_id
+        self.guild_id = guild_id
+        self.path_type = path_type
+
+    @discord.ui.button(label="Ready", style=discord.ButtonStyle.success, emoji="🚀")
+    async def applicant_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.stop()
+        
+        guild = self.bot.get_guild(self.guild_id)
+        if not guild:
+            return
+            
+        applicant = guild.get_member(interaction.user.id)
+        reviewer = guild.get_member(self.reviewer_id)
+        
+        category = guild.get_channel(MOCK_TRIAL_CATEGORY_ID)
+        room_name = f"🏛️-mock-{applicant.name.lower()}" if applicant else f"🏛️-mock-{interaction.user.id}"
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            reviewer: discord.PermissionOverwrite(read_messages=True, send_messages=True) if reviewer else None,
+            applicant: discord.PermissionOverwrite(read_messages=True, send_messages=True) if applicant else None
+        }
+        # Filter out empty overwrites safely
+        overwrites = {k: v for k, v in overwrites.items() if k is not None}
+
+        mock_channel = await guild.create_text_channel(name=room_name, category=category, overwrites=overwrites)
+        
+        embed = discord.Embed(
+            title=f"🏛️ Practical Litigation Mock Trial | Room Online",
+            description=f"This channel has been isolated to grade clinical skill targets.\n\n"
+                        f"⚖️ **Presiding Assessor:** {reviewer.mention if reviewer else 'Staff'}\n"
+                        f"🎓 **Applicant Under Profiling:** {applicant.mention if applicant else interaction.user.mention}\n"
+                        f"📋 **Division Path Assignment:** `{self.path_type.upper()}`",
+            color=discord.Color.gold()
+        )
+        
+        mentions = f"{reviewer.mention if reviewer else ''} {applicant.mention if applicant else interaction.user.mention}"
+        await mock_channel.send(content=mentions, embed=embed)
+        await interaction.user.send(f"✅ **Room Created:** Your live practical mock simulation room has been mounted here: {mock_channel.mention}")
+
+    @discord.ui.button(label="Not Ready", style=discord.ButtonStyle.danger, emoji="🛑")
+    async def applicant_not_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("📌 Staged. Please alert department reviewers via server channels when you are ready to construct the trial space.", ephemeral=True)
+        self.stop()
 
 
 class ApplicationReviewView(discord.ui.View):
@@ -308,10 +298,11 @@ class ApplicationReviewView(discord.ui.View):
             dm_embed = discord.Embed(
                 title="⚖️ Court Clerk Assessment Passed!",
                 description=f"Congratulations, your written evaluation for the **{self.path_type.upper()}** division has been accepted.\n"
-                            f"Prepare yourself. Your reviewing justice ({interaction.user.mention}) will now launch your live practical mock trial.",
+                            f"Are you ready to advance directly to your active live practical mock trial?",
                 color=discord.Color.green()
             )
-            await applicant.send(embed=dm_embed)
+            view = DMApplicantMockReadyView(interaction.client, interaction.user.id, interaction.guild.id, self.path_type)
+            await applicant.send(embed=dm_embed, view=view)
         except discord.Forbidden:
             pass
 
@@ -380,7 +371,6 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-        # --- MODIFIED CHANNEL DELETION LOGIC ---
         await asyncio.sleep(5)
         try:
             await interaction.channel.delete(reason="Mock trial completed successfully.")
@@ -409,7 +399,6 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-        # --- MODIFIED CHANNEL DELETION LOGIC ---
         await asyncio.sleep(5)
         try:
             await interaction.channel.delete(reason="Mock trial completed - performance unsatisfactory.")
@@ -436,7 +425,7 @@ def setup_court_testing(bot: commands.Bot):
             description="Welcome to the judicial verification terminal. Selected court clerks testing for practical advancement or litigation credentials must pick their structural route below.\n\n"
                         "⚠️ **Rules & Guidelines:**\n"
                         "* Selecting a path instantly constructs a unique, highly randomized 10-question text profile tracking three distinct sections.\n"
-                        "* Forms will automatically cascade to the next section upon successful input delivery.",
+                        "* Forms will automatically cascade to your direct messages upon path tracking updates selection.",
             color=discord.Color.dark_blue()
         )
         embed.set_footer(text="System Monitoring Active | Chief Magistrate Overseer Network")
@@ -446,7 +435,7 @@ def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="mocktrial")
     async def start_mock_trial(ctx, applicant: discord.Member, path_type: str):
-        """Deploys a localized text courtroom isolating the assessor and applicant."""
+        """Deploys a localized text courtroom isolating the assessor and applicant manually."""
         chief_role = ctx.guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge = ctx.guild.get_role(ROLE_SENIOR_JUDGE)
         
