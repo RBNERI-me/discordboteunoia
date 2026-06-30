@@ -104,7 +104,6 @@ ACTIVE_TEST_SESSIONS = {}
 # =================================================================
 
 class DMReadyCheckView(discord.ui.View):
-    """Sent to the applicant's DMs immediately after selecting a path track."""
     def __init__(self, bot: commands.Bot, guild: discord.Guild, path_type: str):
         super().__init__(timeout=600)
         self.bot = bot
@@ -113,17 +112,15 @@ class DMReadyCheckView(discord.ui.View):
 
     @discord.ui.button(label="I Am Ready", style=discord.ButtonStyle.success, emoji="✅", custom_id="clerk_exam:dm_ready")
     def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Fire background task to handle sequential collection without hanging the interaction gateway
         self.bot.loop.create_task(self.run_exam_sequence(interaction))
         self.stop()
 
     async def run_exam_sequence(self, interaction: discord.Interaction):
-        await interaction.response.send_message("✍️ **Verification Confirmed.** The examination has begun. Questions will be sent one at a time. Please read each item thoroughly.\n*Note: You can type `exit` or `cancel` at any time to withdraw and reset.*")
+        await interaction.response.send_message("✍️ **Verification Confirmed.** The examination has begun. Questions will be sent one at a time. Please read each item thoroughly.\n*Note: You can type `exit` or `cancel` at any time to withdraw from the application.*")
         
         user = interaction.user
         pool = QUESTIONS_DATA[self.path_type]
         
-        # Sample and sequence exactly 10 questions (3, 3, 4)
         sec1_qs = random.sample(pool["sec1"], 3)
         sec2_qs = random.sample(pool["sec2"], 3)
         sec3_qs = random.sample(pool["sec3"], 4)
@@ -143,11 +140,10 @@ class DMReadyCheckView(discord.ui.View):
             await user.send(embed=embed)
             
             try:
-                msg = await self.bot.wait_for('message', check=check, timeout=1200) # 20 minutes per answer limit
+                msg = await self.bot.wait_for('message', check=check, timeout=1200)
                 
-                # Check for explicit cancellation exit commands
                 if msg.content.lower().strip() in ["exit", "cancel"]:
-                    await user.send("🛑 **Application Cancelled:** You have chosen to exit the application process. Your session has been safely reset.")
+                    await user.send("🛑 **Application Cancelled:** You have chosen to exit the application process. Your answers have been discarded and your session is closed.")
                     if user.id in ACTIVE_TEST_SESSIONS:
                         del ACTIVE_TEST_SESSIONS[user.id]
                     return
@@ -159,7 +155,6 @@ class DMReadyCheckView(discord.ui.View):
                     del ACTIVE_TEST_SESSIONS[user.id]
                 return
 
-        # Compilation & Logging Delivery Phase
         await user.send("⏳ **Compilation Complete.** Compiling answers and submitting profile to high-ranking judicial review rooms...")
         
         chan_id = ADVOCACY_LOG_CHANNEL_ID if self.path_type == "advocacy" else JUDICIAL_LOG_CHANNEL_ID
@@ -212,12 +207,11 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # FIXED: Instead of hard-blocking with an alert, choosing a track overrides/resets old states
+        # ADJUSTED: Automatically wipe old stale cache if it exists, allowing instant re-application
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
         try:
-            # Build initial check presentation layout via DMs
             init_embed = discord.Embed(
                 title=f"🏛️ {chosen_path.upper()} Track Examination Protocol",
                 description="You have chosen to seek confirmation credentials under this department jurisdiction.\n\n"
@@ -227,7 +221,6 @@ class ApplicationEntryBoardView(discord.ui.View):
             ready_view = DMReadyCheckView(self.bot, interaction.guild, chosen_path)
             await interaction.user.send(embed=init_embed, view=ready_view)
             
-            # Register systemic application instance
             ACTIVE_TEST_SESSIONS[interaction.user.id] = True
             await interaction.response.send_message("📬 **Evaluation Link Transmitted:** Check your Direct Messages to initiate your practical questions.", ephemeral=True)
             
@@ -263,14 +256,12 @@ class ApplicationReviewView(discord.ui.View):
             await interaction.followup.send("❌ Error: Applicant could not be located in this server map.", ephemeral=True)
             return
 
-        # Mutate logging embed visually to state entry clearance
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = f"⚖️ Application Approved | Entry Finalized"
         edited_embed.color = discord.Color.green()
         edited_embed.description = f"**Applicant:** {applicant.mention}\n**Authorized Verdict:** ✅ Accepted\n**Reviewing Officer:** {interaction.user.mention}"
         await interaction.message.edit(embed=edited_embed, view=None)
 
-        # Ship dynamic Mock Trial confirmation invitation directly into the user's DM
         try:
             invite_embed = discord.Embed(
                 title="⚖️ Written Assessment Passed!",
@@ -315,9 +306,8 @@ class ApplicationReviewView(discord.ui.View):
 # =================================================================
 
 class MockTrialInvitationView(discord.ui.View):
-    """Dispatched to the applicant's DM once the officer triggers acceptance signature."""
     def __init__(self, bot: commands.Bot, guild: discord.Guild, applicant_id: int, assessor_id: int, path_type: str):
-        super().__init__(timeout=86400) # Valid for 24 hours
+        super().__init__(timeout=86400)
         self.bot = bot
         self.guild = guild
         self.applicant_id = applicant_id
@@ -402,7 +392,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your performance during the mock litigation room simulation was deemed exemplary. Your legal authorization roles are officially active!",
                     color=discord.Color.green()
                 )
-                await applicant.send(msg)
+                await applicant.send(embed=msg)
             except discord.Forbidden:
                 pass
 
@@ -430,7 +420,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your practical courtroom simulation handling missed necessary structural benchmarks. Review procedures and coordinate with your department senior for rescheduled profiling.",
                     color=discord.Color.red()
                 )
-                await applicant.send(msg)
+                await applicant.send(embed=msg)
             except discord.Forbidden:
                 pass
 
@@ -441,13 +431,15 @@ class MockTrialAssessmentView(discord.ui.View):
             pass
 
 
-# --- FIXED COMMAND REGISTRATION PIPELINE ---
+# =================================================================
+# FIXED COMMAND REGISTRATION PIPELINE
+# =================================================================
+
 def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="trialcourt")
     @commands.has_permissions(administrator=True)
     async def deploy_trial_board(ctx):
-        """Spawns the singular persistent path examination entry point."""
         target_chan = ctx.guild.get_channel(TESTING_BOARD_CHANNEL_ID)
         if not target_chan:
             await ctx.send("❌ Setup Path Error: Invalid testing core channel configured.")
@@ -468,7 +460,6 @@ def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="mocktrial")
     async def start_mock_trial(ctx, applicant: discord.Member, path_type: str):
-        """Deploys a localized text courtroom isolating the assessor and applicant manually."""
         chief_role = ctx.guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge = ctx.guild.get_role(ROLE_SENIOR_JUDGE)
         
@@ -505,7 +496,6 @@ def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="callwitness")
     async def call_witness_to_mock(ctx, member: discord.Member):
-        """Allows an active assessor to dynamically bring a witness or assistant into the channel."""
         chief_role = ctx.guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge = ctx.guild.get_role(ROLE_SENIOR_JUDGE)
         
@@ -528,7 +518,6 @@ def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="endtrial")
     async def complete_mock_trial(ctx, applicant: discord.Member, path_type: str):
-        """Closes the practical trial and drops the final decision card for the assessor."""
         chief_role = ctx.guild.get_role(ROLE_CHIEF_MAGISTRATE)
         sr_judge = ctx.guild.get_role(ROLE_SENIOR_JUDGE)
         
@@ -548,4 +537,3 @@ def setup_court_testing(bot: commands.Bot):
         
         grading_view = MockTrialAssessmentView(applicant_id=applicant.id, path_type=clean_path)
         await ctx.send(embed=embed, view=grading_view)
-        
