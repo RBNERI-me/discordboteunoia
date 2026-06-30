@@ -207,8 +207,7 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # FIXED: The conditional error check blocking the user has been completely removed.
-        # This safely pops any old cache data tracking their session, allowing immediate re-application.
+        # FIXED: Removed the old blocking error completely to clear stale caches immediately.
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
@@ -374,19 +373,26 @@ class MockTrialAssessmentView(discord.ui.View):
         target_role_id = ROLE_ADVOCACY_GRADUATE if self.path_type == "advocacy" else ROLE_JUDICIAL_GRADUATE
         target_role = guild.get_role(target_role_id)
 
+        # FIXED: Improved safety here. If hierarchy fails, the channel notification prints out clearly.
+        role_failed = False
         if applicant and target_role:
             try:
                 await applicant.add_roles(target_role)
             except discord.Forbidden:
-                await interaction.followup.send("⚠️ Notice: Bot lacks administrative hierarchy clearance to apply that role.", ephemeral=True)
+                role_failed = True
 
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "✨ Practical Trial Closed: Outstanding Merit"
         edited_embed.color = discord.Color.green()
-        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
+        
+        if role_failed:
+            edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard.\n⚠️ **Notice:** Bot lacks administrative hierarchy clearance to apply that role. Drag the bot's role higher in Server Settings.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 10 seconds...*"
+        else:
+            edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
+            
         await interaction.message.edit(embed=edited_embed, view=None)
 
-        if applicant:
+        if applicant and not role_failed:
             try:
                 msg = discord.Embed(
                     title="⚖️ High Court Graduation Notification",
@@ -397,9 +403,9 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(10 if role_failed else 5)
         try:
-            await interaction.channel.delete(reason="Mock trial completed successfully.")
+            await interaction.channel.delete(reason="Mock trial completed.")
         except discord.Forbidden:
             pass
 
