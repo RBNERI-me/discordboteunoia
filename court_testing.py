@@ -196,9 +196,9 @@ class ApplicationEntryBoardView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
-    # CHANGED: custom_id was updated to clear the stale selection listener cache from Discord
+    # ADJUSTED: custom_id updated to v3 to bypass older Discord interaction cache layers completely
     @discord.ui.select(
-        custom_id="clerk:path_selection_v2",
+        custom_id="clerk:path_selection_v3",
         placeholder="Choose your specialized courtroom path trajectory...",
         options=[
             discord.SelectOption(label="Advocacy Division Track", value="advocacy", description="Focuses on litigation, client defense, and evidence presentation.", emoji="👔"),
@@ -208,7 +208,8 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # GUARANTEED RESET: Wipes out data from dict tracking arrays right away.
+        # ADJUSTED: The condition blocking active sessions has been deleted entirely.
+        # It now forces an overwrite and clean slate reset on the tracking map.
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
