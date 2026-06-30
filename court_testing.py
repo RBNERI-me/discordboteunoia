@@ -105,11 +105,12 @@ ACTIVE_TEST_SESSIONS = {}
 
 class DMReadyCheckView(discord.ui.View):
     """Sent to the applicant's DMs immediately after selecting a path track."""
-    def __init__(self, bot: commands.Bot, guild: discord.Guild, path_type: str):
+    def __init__(self, bot: commands.Bot, guild: discord.Guild, path_type: str, session_token: int):
         super().__init__(timeout=600)
         self.bot = bot
         self.guild = guild
         self.path_type = path_type
+        self.session_token = session_token
 
     @discord.ui.button(label="I Am Ready", style=discord.ButtonStyle.success, emoji="✅", custom_id="clerk_exam:dm_ready")
     def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -118,9 +119,15 @@ class DMReadyCheckView(discord.ui.View):
         self.stop()
 
     async def run_exam_sequence(self, interaction: discord.Interaction):
+        user = interaction.user
+        
+        # Verify that this task still matches the user's active session token before starting
+        if ACTIVE_TEST_SESSIONS.get(user.id) != self.session_token:
+            await interaction.response.send_message("⚠️ **Session Expired:** This session card was invalidated by a newer application attempt.", ephemeral=True)
+            return
+
         await interaction.response.send_message("✍️ **Verification Confirmed.** The examination has begun. Questions will be sent one at a time. Please read each item thoroughly.\n*Note: You can type `exit` or `cancel` at any time to withdraw from the application.*")
         
-        user = interaction.user
         pool = QUESTIONS_DATA[self.path_type]
         
         # Sample and sequence exactly 10 questions (3, 3, 4)
@@ -135,6 +142,11 @@ class DMReadyCheckView(discord.ui.View):
             return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
 
         for idx, question in enumerate(all_questions, start=1):
+            # Mid-loop validation: ensure a new session didn't override this one while waiting/processing
+            if ACTIVE_TEST_SESSIONS.get(user.id) != self.session_token:
+                await user.send("⚠️ **Session Terminated:** This application has been canceled because a newer application instance was initialized.")
+                return
+
             embed = discord.Embed(
                 title=f"📝 Question {idx} of 10",
                 description=f"**{question}**\n\n*Type your complete legal response below and hit send. (Or type `exit` to quit)*",
@@ -148,16 +160,21 @@ class DMReadyCheckView(discord.ui.View):
                 # Check for explicit cancellation exit commands
                 if msg.content.lower().strip() in ["exit", "cancel"]:
                     await user.send("🛑 **Application Cancelled:** You have chosen to exit the application process. Your answers have been discarded and your session is closed.")
-                    if user.id in ACTIVE_TEST_SESSIONS:
+                    if ACTIVE_TEST_SESSIONS.get(user.id) == self.session_token:
                         del ACTIVE_TEST_SESSIONS[user.id]
                     return
 
                 all_qa_pairs.append((question, msg.content))
             except asyncio.TimeoutError:
                 await user.send("❌ **Session Terminated:** Answer collection period timed out due to excessive inactivity.")
-                if user.id in ACTIVE_TEST_SESSIONS:
+                if ACTIVE_TEST_SESSIONS.get(user.id) == self.session_token:
                     del ACTIVE_TEST_SESSIONS[user.id]
                 return
+
+        # Double check one final time before database logging delivery
+        if ACTIVE_TEST_SESSIONS.get(user.id) != self.session_token:
+            await user.send("⚠️ **Submission Aborted:** This session is no longer valid.")
+            return
 
         # Compilation & Logging Delivery Phase
         await user.send("⏳ **Compilation Complete.** Compiling answers and submitting profile to high-ranking judicial review rooms...")
@@ -167,7 +184,7 @@ class DMReadyCheckView(discord.ui.View):
         
         if not log_channel:
             await user.send("❌ Internal operational error communicating with review networks. Contact administration.")
-            if user.id in ACTIVE_TEST_SESSIONS:
+            if ACTIVE_TEST_SESSIONS.get(user.id) == self.session_token:
                 del ACTIVE_TEST_SESSIONS[user.id]
             return
 
@@ -186,7 +203,7 @@ class DMReadyCheckView(discord.ui.View):
         review_view = ApplicationReviewView(applicant_id=user.id, path_type=self.path_type)
         await log_channel.send(content=ping_content, embed=review_embed, view=review_view)
         
-        if user.id in ACTIVE_TEST_SESSIONS:
+        if ACTIVE_TEST_SESSIONS.get(user.id) == self.session_token:
             del ACTIVE_TEST_SESSIONS[user.id]
             
         await user.send("✨ **Your multi-stage examination has been compiled and logged for high-ranking judicial inspection.**")
@@ -211,10 +228,11 @@ class ApplicationEntryBoardView(discord.ui.View):
     )
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
+        user_id = interaction.user.id
         
-        if interaction.user.id in ACTIVE_TEST_SESSIONS:
-            await interaction.response.send_message("❌ **Active Instance Alert:** You already have an evaluation running.", ephemeral=True)
-            return
+        # Generate a distinct random integer token to serve as an identifier tracker for this exact workflow run
+        new_session_token = random.randint(100000, 999999)
+        ACTIVE_TEST_SESSIONS[user_id] = new_session_token
 
         try:
             # Build initial check presentation layout via DMs
@@ -224,14 +242,15 @@ class ApplicationEntryBoardView(discord.ui.View):
                             "Confirm your operational capability to perform continuous text processing below when ready.",
                 color=discord.Color.dark_blue()
             )
-            ready_view = DMReadyCheckView(self.bot, interaction.guild, chosen_path)
+            ready_view = DMReadyCheckView(self.bot, interaction.guild, chosen_path, new_session_token)
             await interaction.user.send(embed=init_embed, view=ready_view)
             
-            # Register systemic application instance
-            ACTIVE_TEST_SESSIONS[interaction.user.id] = True
-            await interaction.response.send_message("📬 **Evaluation Link Transmitted:** Check your Direct Messages to initiate your practical questions.", ephemeral=True)
+            await interaction.response.send_message("📬 **Evaluation Link Transmitted:** Check your Direct Messages to initiate your practical questions. *(If you had an ongoing application running, it has been restarted)*", ephemeral=True)
             
         except discord.Forbidden:
+            # Revert track reservation state if DMs are unreachable
+            if ACTIVE_TEST_SESSIONS.get(user_id) == new_session_token:
+                del ACTIVE_TEST_SESSIONS[user_id]
             await interaction.response.send_message("❌ **Transmission Blocked:** Unable to access your DM channel inbox. Open privacy permissions and try again.", ephemeral=True)
 
 
@@ -404,7 +423,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your performance during the mock litigation room simulation was deemed exemplary. Your legal authorization roles are officially active!",
                     color=discord.Color.green()
                 )
-                await applicant.send(embed=msg)
+                await applicant.send(msg)
             except discord.Forbidden:
                 pass
 
@@ -432,7 +451,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your practical courtroom simulation handling missed necessary structural benchmarks. Review procedures and coordinate with your department senior for rescheduled profiling.",
                     color=discord.Color.red()
                 )
-                await applicant.send(embed=msg)
+                await applicant.send(msg)
             except discord.Forbidden:
                 pass
 
