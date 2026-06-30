@@ -1,13 +1,14 @@
 import discord
 from discord.ext import commands
 import random
+import asyncio  # Imported for handling the deletion delay safely
 
 # --- CONFIGURATION PATH DETAILS ---
 TESTING_BOARD_CHANNEL_ID = 1521006976023400489  
 ADVOCACY_LOG_CHANNEL_ID = 1521007129899827302  
 JUDICIAL_LOG_CHANNEL_ID = 1521007158823485551   
 
-MOCK_TRIAL_CATEGORY_ID = 1521007475602755655    
+MOCK_TRIAL_CATEGORY_ID = 1521007475602755655     
 
 ROLE_CHIEF_MAGISTRATE = 1519858689941573794
 ROLE_SENIOR_JUDGE = 1519858791275823195
@@ -174,8 +175,6 @@ class SectionThreeModal(discord.ui.Modal):
             val_text = f"*{a[:1000]}*" if a else "*No answer provided*"
             embed.add_field(name=f"Q{idx}: {q[:240]}", value=val_text, inline=False)
 
-        # --- MODIFIED MENTION LOGIC ---
-        # Isolate the ping content strictly by division type
         if self.path_type == "advocacy":
             ping_content = f"⚖️ <@&{ROLE_BARRISTER}>"
         else:
@@ -367,7 +366,7 @@ class MockTrialAssessmentView(discord.ui.View):
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "✨ Practical Trial Closed: Outstanding Merit"
         edited_embed.color = discord.Color.green()
-        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}"
+        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
         await interaction.message.edit(embed=edited_embed, view=None)
 
         if applicant:
@@ -381,6 +380,13 @@ class MockTrialAssessmentView(discord.ui.View):
             except discord.Forbidden:
                 pass
 
+        # --- MODIFIED CHANNEL DELETION LOGIC ---
+        await asyncio.sleep(5)
+        try:
+            await interaction.channel.delete(reason="Mock trial completed successfully.")
+        except discord.Forbidden:
+            pass
+
     @discord.ui.button(label="Unsatisfactory Performance", style=discord.ButtonStyle.danger, custom_id="mock_assessment:fail", emoji="⚠️")
     async def choice_poor(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -389,7 +395,7 @@ class MockTrialAssessmentView(discord.ui.View):
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "🚫 Practical Trial Closed: Revision Required"
         edited_embed.color = discord.Color.red()
-        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}"
+        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
         await interaction.message.edit(embed=edited_embed, view=None)
 
         if applicant:
@@ -402,6 +408,13 @@ class MockTrialAssessmentView(discord.ui.View):
                 await applicant.send(embed=msg)
             except discord.Forbidden:
                 pass
+
+        # --- MODIFIED CHANNEL DELETION LOGIC ---
+        await asyncio.sleep(5)
+        try:
+            await interaction.channel.delete(reason="Mock trial completed - performance unsatisfactory.")
+        except discord.Forbidden:
+            pass
 
 # =================================================================
 # FIXED COMMAND REGISTRATION PIPELINE
