@@ -252,11 +252,9 @@ class ApplicationReviewView(discord.ui.View):
 
         await interaction.response.defer()
         
-        # If running from persistent load fallback (id=0), extract true ID from embed footer or description text parsing
         target_id = self.applicant_id
         if target_id == 0:
             try:
-                # Find ID within parentheses in the embed description text
                 desc = interaction.message.embeds[0].description
                 target_id = int(desc.split("(")[1].split(")")[0])
             except Exception:
@@ -394,7 +392,6 @@ class MockTrialAssessmentView(discord.ui.View):
         target_id = self.applicant_id
         if target_id == 0:
             try:
-                # Fallback parse from mentions array inside embed string
                 desc = interaction.message.embeds[0].description
                 target_id = int(desc.split("<@")[2].split(">")[0])
             except Exception:
@@ -532,7 +529,7 @@ def setup_court_testing(bot: commands.Bot):
         mock_channel = await ctx.guild.create_text_channel(name=room_name, category=category, overwrites=overwrites)
 
         embed = discord.Embed(
-            title=f"🏛️ Practical Litigation Mock Trial | Room Online",
+            title="🏛️ Practical Litigation Mock Trial | Room Online",
             description=f"This channel has been isolated to grade clinical skill targets.\n\n"
                         f"⚖️ **Presiding Assessor:** {ctx.author.mention}\n"
                         f"🎓 **Applicant Under Profiling:** {applicant.mention}\n"
