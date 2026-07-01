@@ -110,7 +110,6 @@ class DMReadyCheckView(discord.ui.View):
         self.guild = guild
         self.path_type = path_type
 
-    # FIXED: Changed from 'def' to 'async def' to resolve Render startup crash
     @discord.ui.button(label="I Am Ready", style=discord.ButtonStyle.success, emoji="✅", custom_id="clerk_exam:dm_ready")
     async def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.bot.loop.create_task(self.run_exam_sequence(interaction))
@@ -193,7 +192,7 @@ class DMReadyCheckView(discord.ui.View):
 # =================================================================
 
 class ApplicationEntryBoardView(discord.ui.View):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot = None):
         super().__init__(timeout=None)
         self.bot = bot
 
@@ -207,6 +206,7 @@ class ApplicationEntryBoardView(discord.ui.View):
     )
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
+        bot_instance = self.bot or interaction.client
         
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
@@ -218,7 +218,7 @@ class ApplicationEntryBoardView(discord.ui.View):
                             "Confirm your operational capability to perform continuous text processing below when ready.",
                 color=discord.Color.dark_blue()
             )
-            ready_view = DMReadyCheckView(self.bot, interaction.guild, chosen_path)
+            ready_view = DMReadyCheckView(bot_instance, interaction.guild, chosen_path)
             await interaction.user.send(embed=init_embed, view=ready_view)
             
             ACTIVE_TEST_SESSIONS[interaction.user.id] = True
@@ -229,7 +229,7 @@ class ApplicationEntryBoardView(discord.ui.View):
 
 
 class ApplicationReviewView(discord.ui.View):
-    def __init__(self, applicant_id: int, path_type: str):
+    def __init__(self, applicant_id: int = 0, path_type: str = "advocacy"):
         super().__init__(timeout=None)
         self.applicant_id = applicant_id
         self.path_type = path_type
@@ -251,7 +251,19 @@ class ApplicationReviewView(discord.ui.View):
             return
 
         await interaction.response.defer()
-        applicant = interaction.guild.get_member(self.applicant_id)
+        
+        # If running from persistent load fallback (id=0), extract true ID from embed footer or description text parsing
+        target_id = self.applicant_id
+        if target_id == 0:
+            try:
+                # Find ID within parentheses in the embed description text
+                desc = interaction.message.embeds[0].description
+                target_id = int(desc.split("(")[1].split(")")[0])
+            except Exception:
+                await interaction.followup.send("❌ Persistence error parsing state identity metadata from host embed card.", ephemeral=True)
+                return
+
+        applicant = interaction.guild.get_member(target_id)
         if not applicant:
             await interaction.followup.send("❌ Error: Applicant could not be located in this server map.", ephemeral=True)
             return
@@ -269,7 +281,7 @@ class ApplicationReviewView(discord.ui.View):
                             "You are now required to enter a live practical mock courtroom environment. Check your readiness below.",
                 color=discord.Color.green()
             )
-            mock_invite_view = MockTrialInvitationView(interaction.client, interaction.guild, self.applicant_id, interaction.user.id, self.path_type)
+            mock_invite_view = MockTrialInvitationView(interaction.client, interaction.guild, target_id, interaction.user.id, self.path_type)
             await applicant.send(embed=invite_embed, view=mock_invite_view)
         except discord.Forbidden:
             pass
@@ -281,12 +293,22 @@ class ApplicationReviewView(discord.ui.View):
             return
 
         await interaction.response.defer()
-        applicant = interaction.guild.get_member(self.applicant_id)
+        
+        target_id = self.applicant_id
+        if target_id == 0:
+            try:
+                desc = interaction.message.embeds[0].description
+                target_id = int(desc.split("(")[1].split(")")[0])
+            except Exception:
+                await interaction.followup.send("❌ Persistence error parsing state identity metadata.", ephemeral=True)
+                return
+
+        applicant = interaction.guild.get_member(target_id)
         
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = f"⚖️ Application Rejected & Shelved"
         edited_embed.color = discord.Color.red()
-        edited_embed.description = f"**Applicant:** <@{self.applicant_id}>\n**Authorized Verdict:** ❌ Rejected\n**Reviewing Officer:** {interaction.user.mention}"
+        edited_embed.description = f"**Applicant:** <@{target_id}>\n**Authorized Verdict:** ❌ Rejected\n**Reviewing Officer:** {interaction.user.mention}"
         await interaction.message.edit(embed=edited_embed, view=None)
 
         if applicant:
@@ -359,7 +381,7 @@ class MockTrialInvitationView(discord.ui.View):
 
 
 class MockTrialAssessmentView(discord.ui.View):
-    def __init__(self, applicant_id: int, path_type: str):
+    def __init__(self, applicant_id: int = 0, path_type: str = "advocacy"):
         super().__init__(timeout=None)
         self.applicant_id = applicant_id
         self.path_type = path_type
@@ -368,8 +390,18 @@ class MockTrialAssessmentView(discord.ui.View):
     async def choice_well(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         guild = interaction.guild
-        applicant = guild.get_member(self.applicant_id)
+        
+        target_id = self.applicant_id
+        if target_id == 0:
+            try:
+                # Fallback parse from mentions array inside embed string
+                desc = interaction.message.embeds[0].description
+                target_id = int(desc.split("<@")[2].split(">")[0])
+            except Exception:
+                await interaction.followup.send("❌ Persistence mapping failed to resolve target identity.", ephemeral=True)
+                return
 
+        applicant = guild.get_member(target_id)
         target_role_id = ROLE_ADVOCACY_GRADUATE if self.path_type == "advocacy" else ROLE_JUDICIAL_GRADUATE
         target_role = guild.get_role(target_role_id)
 
@@ -385,9 +417,9 @@ class MockTrialAssessmentView(discord.ui.View):
         edited_embed.color = discord.Color.green()
         
         if role_failed:
-            edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard.\n⚠️ **Notice:** Bot lacks administrative hierarchy clearance to apply that role. Drag the bot's role higher in Server Settings.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 10 seconds...*"
+            edited_embed.description = f"**Assessed Member:** <@{target_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard.\n⚠️ **Notice:** Bot lacks administrative hierarchy clearance to apply that role. Drag the bot's role higher in Server Settings.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 10 seconds...*"
         else:
-            edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
+            edited_embed.description = f"**Assessed Member:** <@{target_id}>\n**Verdict:** 🎉 Performance Met Exceptional Standard. Role deployed.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
             
         await interaction.message.edit(embed=edited_embed, view=None)
 
@@ -411,12 +443,22 @@ class MockTrialAssessmentView(discord.ui.View):
     @discord.ui.button(label="Unsatisfactory Performance", style=discord.ButtonStyle.danger, custom_id="mock_assessment:fail", emoji="⚠️")
     async def choice_poor(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        applicant = interaction.guild.get_member(self.applicant_id)
+        
+        target_id = self.applicant_id
+        if target_id == 0:
+            try:
+                desc = interaction.message.embeds[0].description
+                target_id = int(desc.split("<@")[2].split(">")[0])
+            except Exception:
+                await interaction.followup.send("❌ Persistence mapping tracking breakdown.", ephemeral=True)
+                return
+
+        applicant = interaction.guild.get_member(target_id)
 
         edited_embed = interaction.message.embeds[0]
         edited_embed.title = "🚫 Practical Trial Closed: Revision Required"
         edited_embed.color = discord.Color.red()
-        edited_embed.description = f"**Assessed Member:** <@{self.applicant_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
+        edited_embed.description = f"**Assessed Member:** <@{target_id}>\n**Verdict:** ❌ Target metrics were missed. Remedial training assigned.\n**Presiding Assessor:** {interaction.user.mention}\n\n*🧹 This room will self-destruct in 5 seconds...*"
         await interaction.message.edit(embed=edited_embed, view=None)
 
         if applicant:
@@ -537,7 +579,7 @@ def setup_court_testing(bot: commands.Bot):
             title="⚖️ Practical Simulation Room Evaluation Card",
             description=f"Assess the applicant's courtroom management workflow, confidence, rule mastery, and clarity below.\n\n"
                         f"**Applicant:** {applicant.mention}\n"
-                        f"**Path Track:** `{clean_path.upper()}`",   
+                        f"**Path Track:** `{clean_path.upper()}`",
             color=discord.Color.purple()
         )
         
