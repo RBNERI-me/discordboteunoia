@@ -529,7 +529,7 @@ def setup_court_testing(bot: commands.Bot):
         mock_channel = await ctx.guild.create_text_channel(name=room_name, category=category, overwrites=overwrites)
 
         embed = discord.Embed(
-            title="🏛️ Practical Litigation Mock Trial | Room Online",
+            title=f"🏛️ Practical Litigation Mock Trial | Room Online",
             description=f"This channel has been isolated to grade clinical skill targets.\n\n"
                         f"⚖️ **Presiding Assessor:** {ctx.author.mention}\n"
                         f"🎓 **Applicant Under Profiling:** {applicant.mention}\n"
