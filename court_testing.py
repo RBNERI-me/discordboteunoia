@@ -110,8 +110,9 @@ class DMReadyCheckView(discord.ui.View):
         self.guild = guild
         self.path_type = path_type
 
+    # FIXED: Changed from 'def' to 'async def' to resolve Render startup crash
     @discord.ui.button(label="I Am Ready", style=discord.ButtonStyle.success, emoji="✅", custom_id="clerk_exam:dm_ready")
-    def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm_ready(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.bot.loop.create_task(self.run_exam_sequence(interaction))
         self.stop()
 
@@ -196,7 +197,6 @@ class ApplicationEntryBoardView(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
-    # ADJUSTED: custom_id updated to v3 to bypass older Discord interaction cache layers completely
     @discord.ui.select(
         custom_id="clerk:path_selection_v3",
         placeholder="Choose your specialized courtroom path trajectory...",
@@ -208,8 +208,6 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         
-        # ADJUSTED: The condition blocking active sessions has been deleted entirely.
-        # It now forces an overwrite and clean slate reset on the tracking map.
         if interaction.user.id in ACTIVE_TEST_SESSIONS:
             del ACTIVE_TEST_SESSIONS[interaction.user.id]
 
@@ -539,7 +537,7 @@ def setup_court_testing(bot: commands.Bot):
             title="⚖️ Practical Simulation Room Evaluation Card",
             description=f"Assess the applicant's courtroom management workflow, confidence, rule mastery, and clarity below.\n\n"
                         f"**Applicant:** {applicant.mention}\n"
-                        f"**Path Track:** `{clean_path.upper()}`",
+                        f"**Path Track:** `{clean_path.upper()}`",   
             color=discord.Color.purple()
         )
         
