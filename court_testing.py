@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import random
 import asyncio
+import time  # Added time module to manage active tracking metrics
 
 # --- CONFIGURATION PATH DETAILS ---
 TESTING_BOARD_CHANNEL_ID = 1521006976023400489  
@@ -97,7 +98,9 @@ QUESTIONS_DATA = {
     }
 }
 
+# Key tracking state uses float timestamps instead of generic boolean flags
 ACTIVE_TEST_SESSIONS = {}
+SESSION_TIMEOUT_LIMIT = 900  # 15 minutes threshold limit in seconds
 
 # =================================================================
 # APPLICANT DM INTERFACES (CONVERSATIONAL EXAM FLOW)
@@ -140,6 +143,7 @@ class DMReadyCheckView(discord.ui.View):
             await user.send(embed=embed)
             
             try:
+                # 20 minutes answer collection timeframe per single item
                 msg = await self.bot.wait_for('message', check=check, timeout=1200)
                 
                 if msg.content.lower().strip() in ["exit", "cancel"]:
@@ -149,6 +153,11 @@ class DMReadyCheckView(discord.ui.View):
                     return
 
                 all_qa_pairs.append((question, msg.content))
+                
+                # Update user active timestamp context key to prevent expiration midway
+                if user.id in ACTIVE_TEST_SESSIONS:
+                    ACTIVE_TEST_SESSIONS[user.id] = time.time()
+                    
             except asyncio.TimeoutError:
                 await user.send("❌ **Session Terminated:** Answer collection period timed out due to excessive inactivity.")
                 if user.id in ACTIVE_TEST_SESSIONS:
@@ -207,9 +216,23 @@ class ApplicationEntryBoardView(discord.ui.View):
     async def path_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         chosen_path = select.values[0]
         bot_instance = self.bot or interaction.client
+        user_id = interaction.user.id
+        now = time.time()
         
-        if interaction.user.id in ACTIVE_TEST_SESSIONS:
-            del ACTIVE_TEST_SESSIONS[interaction.user.id]
+        # --- TIME STAMP SYSTEM EVALUATION PROTECTION ---
+        if user_id in ACTIVE_TEST_SESSIONS:
+            last_activity = ACTIVE_TEST_SESSIONS[user_id]
+            if now - last_activity < SESSION_TIMEOUT_LIMIT:
+                # The session is genuinely running and still within the 15 min threshold
+                await interaction.response.send_message(
+                    "❌ **Active Instance Alert:** You already have an evaluation running in your Direct Messages. "
+                    "Complete it or type `exit` inside your DMs to start a fresh track.", 
+                    ephemeral=True
+                )
+                return
+            else:
+                # Session has gone stale; clear it out silently
+                del ACTIVE_TEST_SESSIONS[user_id]
 
         try:
             init_embed = discord.Embed(
@@ -221,7 +244,8 @@ class ApplicationEntryBoardView(discord.ui.View):
             ready_view = DMReadyCheckView(bot_instance, interaction.guild, chosen_path)
             await interaction.user.send(embed=init_embed, view=ready_view)
             
-            ACTIVE_TEST_SESSIONS[interaction.user.id] = True
+            # Map user ID initialization timestamp parameters
+            ACTIVE_TEST_SESSIONS[user_id] = now
             await interaction.response.send_message("📬 **Evaluation Link Transmitted:** Check your Direct Messages to initiate your practical questions.", ephemeral=True)
             
         except discord.Forbidden:
@@ -427,7 +451,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your performance during the mock litigation room simulation was deemed exemplary. Your legal authorization roles are officially active!",
                     color=discord.Color.green()
                 )
-                await applicant.send(embed=msg)
+                await applicant.send(msg)
             except discord.Forbidden:
                 pass
 
@@ -465,7 +489,7 @@ class MockTrialAssessmentView(discord.ui.View):
                     description="Your practical courtroom simulation handling missed necessary structural benchmarks. Review procedures and coordinate with your department senior for rescheduled profiling.",
                     color=discord.Color.red()
                 )
-                await applicant.send(embed=msg)
+                await applicant.send(msg)
             except discord.Forbidden:
                 pass
 
