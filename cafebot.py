@@ -4,12 +4,13 @@ import asyncio
 import logging
 import os
 
-# Import the views from your extension file to register them for persistence
+# Import the views and the session tracking dictionary from your extension file
 from court_testing import (
     setup_court_testing, 
     ApplicationEntryBoardView, 
     ApplicationReviewView, 
-    MockTrialAssessmentView
+    MockTrialAssessmentView,
+    ACTIVE_TEST_SESSIONS  # Imported to clear on boot
 )
 
 # Setup basic logging to monitor startup and tracking registrations
@@ -26,7 +27,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # =================================================================
-# CUSTOM GLOBAL OWNER CHECK (FIXED)
+# CUSTOM GLOBAL OWNER CHECK
 # =================================================================
 @bot.check
 async def check_owner_privileges(ctx):
@@ -34,14 +35,16 @@ async def check_owner_privileges(ctx):
     Global check that automatically grants execution clearance to the owner,
     allowing you to bypass standard command restrictions.
     """
+    # NOTE: discord.py checks work sequentially. If you want this to completely 
+    # override hardcoded decorators like @commands.has_permissions(administrator=True),
+    # you'll need to check for owner inside those specific command blocks instead, 
+    # as local command checks run after global ones.
     if ctx.author.id == OWNER_USER_ID:
-        # To completely override local checks (like has_permissions), 
-        # we can temporarily flag the context or let specific checks look for this.
-        ctx.command.ignore_extra = ctx.command.ignore_extra # simple no-op line
+        return True  
     return True  # Let standard command checks handle filtering normally
 
 # =================================================================
-# PERSISTENT VIEW REGISTRATION HOOK (FIXED)
+# PERSISTENT VIEW REGISTRATION HOOK
 # =================================================================
 
 @bot.event
@@ -51,7 +54,7 @@ async def setup_hook():
     Registers persistent views so their interactive button and menu callbacks 
     continue working seamlessly across bot restarts without manual reactivation.
     """
-    # 1. Register the Main Selection Board (FIXED: Passed the required bot instance)
+    # 1. Register the Main Selection Board (Passed the required bot instance)
     bot.add_view(ApplicationEntryBoardView(bot))
     
     # 2. Register Review Pipeline UI (with dynamic structural fallbacks for persistence)
@@ -77,7 +80,11 @@ async def on_ready():
     """Fires when connection to Discord gateway is successfully stabilized."""
     print("--------------------------------------------------")
     print(f"Logged in securely as: {bot.user.name} (ID: {bot.user.id})")
-    print("Status Tracking Setup: Online and ready.")
+    
+    # --- GLOBAL CLEAR ON RESTART ---
+    # Instantly flushes out old memory tracking states upon deployment reboots
+    ACTIVE_TEST_SESSIONS.clear()
+    print("🧹 [System Failsafe] Active evaluation cache cleared out for system restart.")
     print("--------------------------------------------------")
     
     await bot.change_presence(
@@ -89,8 +96,7 @@ async def on_ready():
 
 # --- START RUNTIME PIPELINE ---
 if __name__ == "__main__":
-    # Recommended: Pull token securely from Render Environment Variables 
-    # Fallback to string if not found environment-side
+    # Pull token securely from environment variables
     BOT_TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
