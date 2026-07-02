@@ -507,6 +507,11 @@ class MockTrialAssessmentView(discord.ui.View):
 def setup_court_testing(bot: commands.Bot):
 
     @bot.command(name="trialcourt")
+    async def deploy_trial_board(ctx):
+        # Custom bypass check
+        if not (ctx.author.guild_permissions.administrator or ctx.author.id == 1236605844733296685):
+            await ctx.send("❌ You do not have permission to use this command.")
+            return
     @commands.has_permissions(administrator=True)
     async def deploy_trial_board(ctx):
         target_chan = ctx.guild.get_channel(TESTING_BOARD_CHANNEL_ID)
